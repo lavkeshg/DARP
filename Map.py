@@ -46,7 +46,7 @@ class Rides:
 
     def dropoff_time(self):
         p = self.pickup_time
-        d = {i: p[i - self.N_riders] + 15 * random.random() for i in self.dropoff()}
+        d = {i: p[i - self.N_riders] + 10 * random.random() for i in self.dropoff()}
         return d
 
     def load(self):
