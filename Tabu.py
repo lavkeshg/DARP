@@ -236,10 +236,10 @@ class Tabu():
                     [node.value.put(i) for i in ((load, 'L'), (tmwndw, 'T'), (ridetm, 'R'))]
                 else:
                     node.value = cost
-        [self.model.submodel[i].fix_values(self, sol=xsol) for i in range(self.model.scenarios)]
-        # Optimize Relaxed 2nd Stage
-        [self.model.submodel[s].relax() for s in range(self.model.scenarios)]
-        tsp = sum(self.model.scenarioprob[s] * self.model.submodel[s].relaxmod.ObjVal \
-                  for s in range(self.model.scenarios))
+        # [self.model.submodel[i].fix_values(self, sol=xsol) for i in range(self.model.scenarios)]
+        # # Optimize Relaxed 2nd Stage
+        # [self.model.submodel[s].relax() for s in range(self.model.scenarios)]
+        # tsp = sum(self.model.scenarioprob[s] * self.model.submodel[s].relaxmod.ObjVal \
+        #           for s in range(self.model.scenarios))
         cost += tsp
         solution[-1] = cost
