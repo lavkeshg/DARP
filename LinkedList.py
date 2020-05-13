@@ -1,19 +1,14 @@
-from queue import PriorityQueue
-
-
 class Node():
     '''The Node'''
 
-    def __init__(self, key, value=None):
+    def __init__(self, key, bus=None, value=None, time=None):
         self.next = None
         self.prev = None
         self.key = key
         self.value = value
-
-    def val(self):
-        b = self.value
-        return b
-
+        self.bus = bus
+        self.time = time
+        self.load = None
 
 class LinkedList():
     '''
@@ -82,12 +77,12 @@ class LinkedList():
     def copy(self):
         if self.head is not None:
             list = LinkedList()
-            list.head = Node(self.head.key, self.head.value)
+            list.head = Node(self.head.key, self.head.bus, self.head.value, self.head.time)
             node = self.head
             temp = list.head
             while node is not None:
                 if node.next is not None:
-                    temp.next = Node(node.next.key, node.next.value)
+                    temp.next = Node(node.next.key, node.next.bus, node.next.value, node.next.time)
                 temp = temp.next
                 node = node.next
             return list

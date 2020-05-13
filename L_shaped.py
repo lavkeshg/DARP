@@ -614,17 +614,25 @@ class SubProblem:
 
         else:
             for i, j, k in self.fixedconst_x.keys():
-                # Update first-stage vars for LP sub-problem
-                self.relaxmod.getConstrByName('fix_x[{},{},{}]'.format(i, j, k)).rhs = \
-                    round(sol[0][i, j, k], 4)
-                # Update first-stage vars for MIP sub-problem
-                self.fixedconst_x[i, j, k].rhs = \
-                    round(sol[0][i, j, k])
+                try:
+                    # Update first-stage vars for LP sub-problem
+                    self.relaxmod.getConstrByName('fix_x[{},{},{}]'.format(i, j, k)).rhs = \
+                        round(sol[0][i, j, k], 4)
+                    # Update first-stage vars for MIP sub-problem
+                    self.fixedconst_x[i, j, k].rhs = \
+                        round(sol[0][i, j, k])
+                except KeyError:
+                    self.relaxmod.getConstrByName('fix_x[{},{},{}]'.format(i, j, k)).rhs = 0
+                    self.fixedconst_x[i, j, k].rhs = 0
             for i, j in self.fixedconst_h.keys():
-                self.relaxmod.getConstrByName('fix_h[{},{}]'.format(i, j)).rhs = \
-                    round(sol[1][i, j], 4)
-                self.fixedconst_h[i, j].rhs = \
-                    round(sol[1][i, j])
+                try:
+                    self.relaxmod.getConstrByName('fix_h[{},{}]'.format(i, j)).rhs = \
+                        round(sol[1][i, j], 4)
+                    self.fixedconst_h[i, j].rhs = \
+                        round(sol[1][i, j])
+                except KeyError:
+                    self.relaxmod.getConstrByName('fix_h[{},{}]'.format(i, j)).rhs = 0
+                    self.fixedconst_h[i, j].rhs = 0
             for i in self.fixedconst_p_e.keys():
                 self.relaxmod.getConstrByName('fix_p_e[{}]'.format(i)).rhs = \
                     round(sol[2][i], 4)

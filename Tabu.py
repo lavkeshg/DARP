@@ -6,12 +6,14 @@ from LinkedList import *
 class Tabu():
     """Implements a tabu search heuristic for DARP problem"""
 
-    def __init__(self, model):
+    def __init__(self, model, tabu_iterations=200, tabu_status=20):
         self.model = model
         self.bus = list(range(self.model.parameters.bus))
         self.N = self.model.parameters.rides
         self.pickup = self.model.parameters.pickup
         self.tabudict = {}
+        self.tabuiter = tabu_iterations
+        self.tabu_status = tabu_status
         self.best = None
         self.bestcandidate = None
         self.pickup_time = self.model.parameters.pickup_time
@@ -22,25 +24,52 @@ class Tabu():
         self.time = self.model.parameters.time
         self.ridetime = self.model.parameters.ridetime
         self.routetime = self.model.mapObject.servicetime + 480
+        self._init_weights()
+
+    def _init_weights(self):
+        self.weight = {
+            'alpha': 1,
+            'beta': 1,
+            'gamma': 1,
+            'delta': 1
+        }
 
     def tabuheuristic(self):
-        self.initialSolution()
+        self.bestcandidate = self.initialSolution()
+        self.solutionEval(self.bestcandidate)
+        self.best = self.bestcandidate
         iter = 0
         while iter != self.tabuiter:
             for i, k in self.tabudict.keys():
                 decr = self.tabudict[i, k] - 1
                 self.tabudict[i, k] = max(0, decr)
+            ngbr = self.neighborhoodGen()
+            print('Neighborhood length: %d (iteration %d)' % (len(ngbr), iter))
+            [self.solutionEval(n) for n in ngbr]
+            for candidate in ngbr:
+                if candidate[-1] < self.bestcandidate[-1]:
+                    self.bestcandidate = candidate
+            if self.bestcandidate[-1] < self.best[-1]:
+                self.best = self.bestcandidate
+                for k in self.bus:
+                    for i in self.best[k]:
+                        if i in self.pickup:
+                            self.tabudict[i, k] = 0
+                # for k in self.optmiter
+                #     self.routeoptimization(self.best)
+            iter += 1
+        return self.best
 
     def initialSolution(self):
         solution = {i: LinkedList() for i in self.bus}
         for i in self.bus:
-            solution[i].append(Node(0))
+            solution[i].append(Node(0, bus=i))
         rdm.shuffle(self.pickup)
         for i in self.pickup:
             j = rdm.randint(0, len(self.bus) - 1)
             solution[j].append(Node(i))
             solution[j].append(Node(i + self.N))
-        [solution[k].append(Node(self.model.last)) for k in self.bus]
+        [solution[k].append(Node(self.model.last, bus=k)) for k in self.bus]
         return solution
 
     def neighborhoodGen(self):
@@ -51,7 +80,7 @@ class Tabu():
             rdm.shuffle(availbus)
             for i in self.bestcandidate[k]:
                 if i in self.pickup:
-                    ngbr = {k: sol[k].copy() for k in sol.keys()}
+                    ngbr = {k: sol[k].copy() for k in self.bus}
                     self.tabudict.update({(i, k): self.tabu_status})
                     for b in availbus:
                         try:
@@ -68,6 +97,7 @@ class Tabu():
                                         node.next = temp
                                         if node.key != i + self.N:
                                             node = ngbr[k][i + self.N]
+                                            ngbr[k].remove(i + self.N)
                                             node.bus = b
                                         else:
                                             break
@@ -103,7 +133,7 @@ class Tabu():
             lstload = schedule[k][prev][4]
             for i in s[1:]:
                 a = (d + self.time[prev, i])
-                b = max(early[i], a)
+                b = max(self.early[i], a)
                 schedule[k].update({i:
                                         [a, b, (b - a), (b + srvc), lstload + self.model.parameters.load[i]]
                                     })
@@ -114,21 +144,27 @@ class Tabu():
         def slack(s, k):
             st = 0
             if type(s) == list:
+                f = PriorityQueue()
                 if s[st] != 0:
-                    f = PriorityQueue()
                     f.put(min(self.late[s[st]] - schedule[k][s[st]][1],
                               self.ridetime - (schedule[k][s[st]][3] -
                                                schedule[k][s[st] + self.N][1])))
                 for i in range(st + 1, len(s)):
+                    curr = schedule[k][s[i]]
                     w = 0
                     for j in range(st + 1, i + 1):
                         if s[j] != self.model.last:
                             w += schedule[k][s[j]][2]
                         if s[j] == self.model.last:
                             W = w
-                    w += min(self.late[s[i]] - schedule[k][s[i]][1],
-                             self.ridetime - (schedule[k][s[i]][3] -
-                                              schedule[k][s[i] + self.N][1]))
+                    if s[i] in self.pickup:
+                        w += min(self.late[s[i]] - curr[1],
+                                 self.ridetime - (schedule[k][s[i] + self.N][1] -
+                                                  curr[3]))
+                    if s[i] not in self.pickup and s[i] != self.model.last:
+                        w += min(self.late[s[i]] - curr[1],
+                                 self.ridetime - (schedule[k][s[i] - self.N][3] -
+                                                  curr[1]))
                     f.put(w)
                 return min(f.get(), W)
             else:
@@ -156,26 +192,54 @@ class Tabu():
                     schedule[k][sol[k][i]][1] += F
                     schedule[k][sol[k][i]][2] = schedule[k][sol[k][i]][1] + srvc
                     compute(sol[k][i:], k)
-        self.calculateObjective(sol, schedule)
+        self.calculateObjective(solution, sol, schedule)
 
-    def calculateObjective(self, sol, schedule):
+    def calculateObjective(self, solution, sol, schedule):
         cost = 0  # Distance cost of the route
+        xsol = [{}, {}, {}, {}]
         for k in sol.keys():
-            for i in sol:
+            dur = 0
+            tmwndw = 0
+            ridetm = 0
+            for i in sol[k]:
+                if i != 0:
+                    xsol[0].update({(prev, i, k): 1})
+                    xsol[1].update({(prev, i): schedule[k][i][2]})
+                    xsol[3].update({i: schedule[k][i][1] - self.late[i]})
+                prev = i
+                if i == self.model.last:
+                    solution[k][i].load = 0
+                    solution[k][i].time = schedule[k][i][0]
+                    break
+                node = solution[k][i]
                 # Load constraint of the route
-                load = max(0, schedule[k][i] - self.model.parameters.capacity)
-                # Time duration of entire trip
-                dur = max(0, schedule[k][self.model.last][0] - schedule[k][0][3] - self.routetime)
-                # Time window constraint
-                tmwndw = max(0, schedule[k][i][1] - self.late[i])
-                # Customer ride-time constraint
-                ridetm = max(0, (schedule[k][i][3] - schedule[k][i + self.N][1])
-                             - self.ridetime)
-                sol[k][i].load = schedule[k][i][4]
-                sol[k][i].value = PriorityQueue()
-                [sol[k][i].value.put(i) for i in ((load, 'L'), (tmwndw, 'T'), (ridetm, 'R'))]
-                cost += self.model.parameters.distance[sol[k][i - 1], sol[k][i]] \
-                        + weight['alpha'] * load \
-                        + weight['beta'] * dur \
-                        + weight['gamma'] * tmwndw \
-                        + weight['delta'] * ridetm
+                load = max(0, schedule[k][i][4] - self.model.parameters.capacity)
+                if i == 0:
+                    # Time duration of entire trip
+                    dur = max(0, schedule[k][self.model.last][0] - schedule[k][0][3] - self.routetime)
+                else:
+                    # Time window constraint
+                    tmwndw = max(0, schedule[k][i][1] - self.late[i])
+                    # Customer ride-time constraint
+                    ridetm = max(0, ((schedule[k][i + self.N][1] - schedule[k][i][3]) if i in self.pickup
+                                     else (schedule[k][i][1] - schedule[k][i - self.N][1]))
+                                 - self.ridetime)
+                node.load = schedule[k][i][4]
+                node.time = schedule[k][i][1]
+                cost += self.model.parameters.distance[node.key, node.next.key] \
+                        + self.weight['alpha'] * load \
+                        + self.weight['beta'] * dur \
+                        + self.weight['gamma'] * tmwndw \
+                        + self.weight['delta'] * ridetm
+                if i != 0:
+                    node.value = PriorityQueue()
+                    [node.value.put(i) for i in ((load, 'L'), (tmwndw, 'T'), (ridetm, 'R'))]
+                else:
+                    node.value = cost
+        [self.model.submodel[i].fix_values(self, sol=xsol) for i in range(self.model.scenarios)]
+        # Optimize Relaxed 2nd Stage
+        [self.model.submodel[s].relax() for s in range(self.model.scenarios)]
+        tsp = sum(self.model.scenarioprob[s] * self.model.submodel[s].relaxmod.ObjVal \
+                  for s in range(self.model.scenarios))
+        cost += tsp
+        solution[-1] = cost
