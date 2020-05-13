@@ -117,12 +117,12 @@ class MasterProblem:
         print('Apprx = %f' % self.variables.th.X)
         print('ObjVal = %f' % z_sub)
 
-    def tabuHeuristic(self):
-        # Construct initial solution
-        self.tabu_init_()
-        tabu = Tabu(self)
-        best = 
-        localbest =
+    # def tabuHeuristic(self):
+    #     # Construct initial solution
+    #     self.tabu_init_()
+    #     tabu = Tabu(self)
+    #     best =
+    #     localbest =
 
     def setLowerBound(self):
         seed = list(range(self.seeder, self.seeder + self.scenarios))
@@ -179,6 +179,7 @@ class MasterProblem:
         self.parameters.BigM = 1e3
         self.parameters.service_time = 5
         self.parameters.capacity = 3
+        self.parameters.ridetime = 60
         self.parameters.distance = self.mapObject.distance
         self.parameters.time = self.mapObject.run
         self.parameters.load = self.mapObject.load()
