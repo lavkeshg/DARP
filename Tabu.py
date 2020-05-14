@@ -6,7 +6,7 @@ from LinkedList import *
 class Tabu():
     """Implements a tabu search heuristic for DARP problem"""
 
-    def __init__(self, model, tabu_iterations=200, tabu_status=20):
+    def __init__(self, model, tabu_iterations=200, tabu_status=20, subset=2):
         self.model = model
         self.bus = list(range(self.model.parameters.bus))
         self.N = self.model.parameters.rides
@@ -24,6 +24,8 @@ class Tabu():
         self.time = self.model.parameters.time
         self.ridetime = self.model.parameters.ridetime
         self.routetime = self.model.mapObject.servicetime + 480
+        self.scenarios = list(range(self.model.scenarios))
+        self.subset = min(subset, self.model.scenarios)
         self._init_weights()
 
     def _init_weights(self):
@@ -35,10 +37,12 @@ class Tabu():
         }
 
     def tabuheuristic(self):
+        print('Building Initial Solution')
         self.bestcandidate = self.initialSolution()
         self.solutionEval(self.bestcandidate)
         self.best = self.bestcandidate
         iter = 0
+        print('Starting Heuristic')
         while iter != self.tabuiter:
             for i, k in self.tabudict.keys():
                 decr = self.tabudict[i, k] - 1
@@ -132,6 +136,9 @@ class Tabu():
             d = schedule[k][prev][3]
             lstload = schedule[k][prev][4]
             for i in s[1:]:
+                if i == self.model.last:
+                    schedule[k].update({i: [(d + self.time[prev, i]), 0, 0, 0, lstload + 0]})
+                    continue
                 a = (d + self.time[prev, i])
                 b = max(self.early[i], a)
                 schedule[k].update({i:
@@ -190,7 +197,7 @@ class Tabu():
                 if sol[k][i] in self.pickup:
                     F = slack(sol[k][i:], k)
                     schedule[k][sol[k][i]][1] += F
-                    schedule[k][sol[k][i]][2] = schedule[k][sol[k][i]][1] + srvc
+                    schedule[k][sol[k][i]][3] = schedule[k][sol[k][i]][1] + srvc
                     compute(sol[k][i:], k)
         self.calculateObjective(solution, sol, schedule)
 
@@ -205,7 +212,7 @@ class Tabu():
                 if i != 0:
                     xsol[0].update({(prev, i, k): 1})
                     xsol[1].update({(prev, i): schedule[k][i][2]})
-                    xsol[3].update({i: schedule[k][i][1] - self.late[i]})
+                    xsol[3].update({i: max(0, schedule[k][i][1] - self.late[i])})
                 prev = i
                 if i == self.model.last:
                     solution[k][i].load = 0
@@ -236,10 +243,23 @@ class Tabu():
                     [node.value.put(i) for i in ((load, 'L'), (tmwndw, 'T'), (ridetm, 'R'))]
                 else:
                     node.value = cost
-        [self.model.submodel[i].fix_values(self, sol=xsol) for i in range(self.model.scenarios)]
+        rdm.shuffle(self.scenarios)
+        S = self.scenarios[:self.subset]
+        [self.model.submodel[s].fix_values(self, sol=xsol) for s in S]
         # Optimize Relaxed 2nd Stage
-        [self.model.submodel[s].relax() for s in range(self.model.scenarios)]
-        tsp = sum(self.model.scenarioprob[s] * self.model.submodel[s].relaxmod.ObjVal \
-                  for s in range(self.model.scenarios))
+        [self.model.submodel[s].relax() for s in S]
+        tsp = 0
+        for s in S:
+            stat = self.model.submodel[s].relaxmod.status
+            if stat == 4 or stat == 3:
+                self.model.submodel[s].model.computeIIS()
+                self.model.submodel[s].model.write('infeasible.ilp')
+                self.model.submodel[s].model.write('infeasible.lp')
+                exit(0)
+            elif stat == 2:
+                tsp += self.model.scenarioprob[s] * self.model.submodel[s].relaxmod.ObjVal
+                print(tsp)
+                # self.model.submodel[s].relaxmod.write('feasible.lp')
+                # self.model.submodel[s].relaxmod.write('feasible.sol')
         cost += tsp
         solution[-1] = cost
