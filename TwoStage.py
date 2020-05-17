@@ -73,8 +73,8 @@ class MasterProblem:
                                      obj={(i, j, k): self.parameters.distance[i, j] for i, j in
                                           self.parameters.distance.keys()
                                           for k in range(self.bus)}, name='x')
-        self.variables.p_e = m.addVars(self.parameters.pickup + self.parameters.dropoff,
-                                       vtype=GRB.CONTINUOUS, lb=0, obj=1, name='p_e')
+        # self.variables.p_e = m.addVars(self.parameters.pickup + self.parameters.dropoff,
+        #                                vtype=GRB.CONTINUOUS, lb=0, obj=1, name='p_e')
         self.variables.p_l = m.addVars(self.parameters.pickup + self.parameters.dropoff,
                                        vtype=GRB.CONTINUOUS, lb=0, obj=1, name='p_l')
         self.variables.t = m.addVars(self.parameters.pickup + self.parameters.dropoff,
@@ -138,8 +138,8 @@ class MasterProblem:
                       self.variables.h[i, self.last] >=
                       self.variables.td[self.last, k] + self.parameters.BigM * (self.variables.x[i, self.last, k] - 1)
                       for i in d for k in b), name='end_time-geq')
-        m.addConstrs((self.variables.p_e[i] >= self.parameters.pickup_time[i] - 10 - self.variables.t[i] for i in
-                      p + d), name='early-penalty')
+        # m.addConstrs((self.variables.p_e[i] >= self.parameters.pickup_time[i] - 10 - self.variables.t[i] for i in
+        #               p + d), name='early-penalty')
         m.addConstrs((self.variables.p_l[i] >= -self.parameters.pickup_time[i] - 10 + self.variables.t[i] for i in
                       p + d), name='late-penalty')
         # ###Cite paper-15 for following tighter constraints
@@ -409,9 +409,9 @@ class TwoStage:
              + ga[i, s] * self.parameters.wait_time + self.variables.hs[i, self.last, s] >=
              self.variables.tds[self.last, k, s] + self.parameters.BigM * (self.variables.xs[i, self.last, k, s] - 1)
              for i in d for k in b for s in S), name='end_time-geq')
-        m.addConstrs(
-            (self.variables.p_es[i, s] >= self.parameters.pickup_time[i] - 20 - self.variables.ts[i, s] for i in
-             p + d for s in S), name='early-penalty')
+        # m.addConstrs(
+        #     (self.variables.p_es[i, s] >= self.parameters.pickup_time[i] - 20 - self.variables.ts[i, s] for i in
+        #      p + d for s in S), name='early-penalty')
         m.addConstrs(
             (self.variables.p_ls[i, s] >= -self.parameters.pickup_time[i] - 20 + self.variables.ts[i, s] for i in
              p + d for s in S), name='late-penalty')
