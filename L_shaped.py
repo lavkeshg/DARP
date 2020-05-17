@@ -3,6 +3,7 @@ from gurobipy import *
 from beautifultable import BeautifulTable
 from _datetime import timedelta
 
+
 class Structure:
     pass
 
@@ -13,18 +14,18 @@ class MasterProblem:
         self.model = Model()
         self.mapObject = Map
         self.seeder = seed
-        self.maxiters = self.mapObject.N_riders*scenarios*scenarios
+        self.maxiters = self.mapObject.N_riders * scenarios * scenarios
         self.ClassProb = probability
         self.last = self.mapObject.depot()[1]
         self.parameters = Structure()
-        self.parameters.bus = bus
+        self.bus = bus
         self.variables = Structure()
         self.constraints = Structure()
         self.results = Structure()
         self.data = Structure()
         self.data.benders_gap = benders_gap
         self.scenarios = scenarios
-        self.scenarioprob = {i: 1/scenarios for i in range(scenarios)}
+        self.scenarioprob = {i: 1 / scenarios for i in range(scenarios)}
         self.iters = 0
         # Instance attribute initialization
         self.submodel = None
@@ -33,9 +34,13 @@ class MasterProblem:
         self.row = {}
         # Method instantiation
         self._parameters()
-        # self._build_model()
-        # self._Benders_init()
+
+    def initialize(self):
+        self._build_model()
+        self._Benders_init()
+        # self.setLowerBound()
         self.__ClassProb__()
+
 
     def _build_model(self):
         self._parameters()
@@ -51,7 +56,7 @@ class MasterProblem:
     def optimize(self):
         self.model.Params.OutputFlag = 0
         self.model.optimize()
-        # self.setLowerBound()
+        self.setLowerBound()
         self._Benders_decomp()
         self.setMIP()
         self.solutions = []
@@ -59,8 +64,8 @@ class MasterProblem:
 
         def OptCutFun(model, where):
             if where == GRB.callback.MIPSOL:
-                    # and ((self.upperbounds[-1] - self.lowerbounds[-1]) >
-                    #                              abs(self.data.benders_gap * self.lowerbounds[-1]) or self.iters == 0):
+                # and ((self.upperbounds[-1] - self.lowerbounds[-1]) >
+                #                              abs(self.data.benders_gap * self.lowerbounds[-1]) or self.iters == 0):
                 x_sol = model.cbGetSolution(self.variables.x)
                 h_sol = model.cbGetSolution(self.variables.h)
                 pe_sol = model.cbGetSolution(self.variables.p_e)
@@ -72,7 +77,8 @@ class MasterProblem:
                 [self.submodel[s].fix_values(sol=sol) for s in range(self.scenarios)]
                 if x_sol not in self.solutionsLP:
                     [self.submodel[s].relax() for s in range(self.scenarios)]
-                    z_subLP = sum(self.scenarioprob[s] * self.submodel[s].relaxmod.ObjVal for s in range(self.scenarios))
+                    z_subLP = sum(
+                        self.scenarioprob[s] * self.submodel[s].relaxmod.ObjVal for s in range(self.scenarios))
                     self.solutionsLP.append(x_sol)
                     if z_subLP > th_sol:
                         self.add_sub_cuts(z_subLP, x_sol=x_sol)
@@ -118,13 +124,6 @@ class MasterProblem:
         print('Apprx = %f' % self.variables.th.X)
         print('ObjVal = %f' % z_sub)
 
-    # def tabuHeuristic(self):
-    #     # Construct initial solution
-    #     self.tabu_init_()
-    #     tabu = Tabu(self)
-    #     best =
-    #     localbest =
-
     def setLowerBound(self):
         seed = list(range(self.seeder, self.seeder + self.scenarios))
         self.submodel = {s: SubProblem(self, seed[s]) for s in range(self.scenarios)}
@@ -145,15 +144,13 @@ class MasterProblem:
         self.subobjBst = 0
         self.LazySub = 0
         self.LazyInt = 0
-        self.setLowerBound()
-
 
     def _Benders_decomp(self):
         [self.submodel[i].fix_values(self) for i in range(self.scenarios)]
         [self.submodel[i].relax() for i in range(self.scenarios)]
         z_sub = sum(self.scenarioprob[s] * self.submodel[s].relaxmod.ObjVal for s in range(self.scenarios))
         self.update_bounds(z_sub)
-        print(self.variables.th.X,z_sub)
+        print(self.variables.th.X, z_sub)
         while (abs(self.data.ub - self.data.lb) > abs(self.data.benders_gap * self.data.lb)) \
                 and (len(self.cutlist) < self.maxiters):
             if z_sub > self.variables.th.X:
@@ -164,11 +161,11 @@ class MasterProblem:
             z_sub = sum(self.scenarioprob[s] * self.submodel[s].relaxmod.ObjVal for s in range(self.scenarios))
             self.update_bounds(z_sub)
             print(self.variables.th.X, z_sub)
-            print(self.data.ub,self.data.lb)
+            print(self.data.ub, self.data.lb)
 
     def setMIP(self):
-        for i,j,k in self.variables.x.keys():
-            self.variables.x[i,j,k].vtype = 'B'
+        for i, j, k in self.variables.x.keys():
+            self.variables.x[i, j, k].vtype = 'B'
         for i in self.parameters.nodes:
             self.variables.r[i].vtype = 'B'
 
@@ -193,25 +190,25 @@ class MasterProblem:
         self.parameters.pickup_time.update(self.parameters.dropoff_time)
         self.parameters.nodes = self.mapObject.nodes()
         self.parameters.rides = self.mapObject.N_riders
-        self.parameters.edges = {(i, j) for i, j in self.parameters.distance.keys()\
-                                    if i != self.last and j != 0 and i != j}
+        self.parameters.edges = {(i, j) for i, j in self.parameters.distance.keys() \
+                                 if i != self.last and j != 0 and i != j}
 
     def _variables(self):
         m = self.model
         self.parameters.capacity = 3
 
-        self.variables.x = m.addVars(self.parameters.edges, list(range(self.parameters.bus)),
+        self.variables.x = m.addVars(self.parameters.edges, list(range(self.bus)),
                                      vtype=GRB.CONTINUOUS, lb=0, ub=1,
                                      obj={(i, j, k): self.parameters.distance[i, j] for i, j in
                                           self.parameters.distance.keys()
-                                          for k in range(self.parameters.bus)}, name='x')
+                                          for k in range(self.bus)}, name='x')
         self.variables.p_e = m.addVars(self.parameters.pickup + self.parameters.dropoff,
                                        vtype=GRB.CONTINUOUS, lb=0, obj=1, name='p_e')
         self.variables.p_l = m.addVars(self.parameters.pickup + self.parameters.dropoff,
                                        vtype=GRB.CONTINUOUS, lb=0, obj=1, name='p_l')
         self.variables.t = m.addVars(self.parameters.pickup + self.parameters.dropoff,
                                      vtype=GRB.CONTINUOUS, lb=0, obj=0, name='t')
-        self.variables.td = m.addVars(self.mapObject.depot(), list(range(self.parameters.bus)),
+        self.variables.td = m.addVars(self.mapObject.depot(), list(range(self.bus)),
                                       vtype=GRB.CONTINUOUS, lb=0, obj=0, name='t')
         self.variables.w = m.addVars(self.parameters.nodes, lb=0, ub=self.parameters.capacity, vtype=GRB.CONTINUOUS,
                                      name='w')
@@ -224,7 +221,7 @@ class MasterProblem:
 
     def _constraints(self):
         m = self.model
-        b = range(self.parameters.bus)
+        b = range(self.bus)
         n = self.parameters.rides
         p = self.parameters.pickup
         d = self.parameters.dropoff
@@ -244,25 +241,28 @@ class MasterProblem:
                       p), name='min-TOA')
         m.addConstrs((
             # (self.variables.r[i] == 1) >>
-             (self.variables.t[i] + self.parameters.time[i, j] + self.parameters.service_time + self.variables.h[i, j]
-             <= self.variables.t[j] + self.parameters.BigM * (2 - self.variables.x[i, j, k] - self.variables.r[i])) for i in
-             p + d
-             for j in p + d
-             for k in b if i != j), name='hold-precedence-leq')
+            (self.variables.t[i] + self.parameters.time[i, j] + self.parameters.service_time + self.variables.h[i, j]
+             <= self.variables.t[j] + self.parameters.BigM * (2 - self.variables.x[i, j, k] - self.variables.r[i])) for
+        i in
+            p + d
+            for j in p + d
+            for k in b if i != j), name='hold-precedence-leq')
         m.addConstrs((
             # (self.variables.r[i] == 1) >>
-             (self.variables.t[i] + self.parameters.time[i, j] + self.parameters.service_time + self.variables.h[i, j]
-             >= self.variables.t[j] - self.parameters.BigM * (2 - self.variables.x[i, j, k] - self.variables.r[i])) for i in
-             p + d
-             for j in p + d
-             for k in b if i != j), name='hold-precedence-geq')
+            (self.variables.t[i] + self.parameters.time[i, j] + self.parameters.service_time + self.variables.h[i, j]
+             >= self.variables.t[j] - self.parameters.BigM * (2 - self.variables.x[i, j, k] - self.variables.r[i])) for
+        i in
+            p + d
+            for j in p + d
+            for k in b if i != j), name='hold-precedence-geq')
         m.addConstrs((
             # (self.variables.r[i] == 0) >>
-             (self.variables.t[i] + self.parameters.time[i, j] + self.parameters.service_time
-              <= self.variables.t[j] + self.parameters.BigM * (1 - self.variables.x[i, j, k] + self.variables.r[i])) for i in
-             p + d
-             for j in p + d
-             for k in b if i != j), name='precedence-leq')
+            (self.variables.t[i] + self.parameters.time[i, j] + self.parameters.service_time
+             <= self.variables.t[j] + self.parameters.BigM * (1 - self.variables.x[i, j, k] + self.variables.r[i])) for
+        i in
+            p + d
+            for j in p + d
+            for k in b if i != j), name='precedence-leq')
         m.addConstrs((self.variables.td[0, k] + self.parameters.time[0, j] + self.variables.h[0, j] <=
                       self.variables.t[j] + self.parameters.BigM * (1 - self.variables.x[0, j, k]) for j in p + d
                       for k in b), name='start_time-leq')
@@ -282,18 +282,21 @@ class MasterProblem:
         m.addConstrs((self.variables.p_l[i] >= -self.parameters.pickup_time[i] - 10 + self.variables.t[i] for i in
                       p + d), name='late-penalty')
         m.addConstrs((self.variables.w[i] + self.parameters.load[j] <= self.variables.w[j] +
-                      (1 - self.variables.x[i, j, k]) * self.parameters.capacity for i, j in self.parameters.edges for k in
+                      (1 - self.variables.x[i, j, k]) * self.parameters.capacity for i, j in self.parameters.edges for k
+                      in
                       b), name='load-balance')
         m.addConstrs(self.variables.x[0, self.last, k] == 0 for k in b)
-        m.addConstrs((self.variables.x[i, j, k] + self.variables.x[j, i, k] <= 1 for i in p+d for j in p+d for k in b
-                     if i != j), name='forbidden')
-        m.addConstrs(self.variables.w[i] <= self.parameters.capacity*self.variables.r[i] for i in self.parameters.nodes)
+        m.addConstrs(
+            (self.variables.x[i, j, k] + self.variables.x[j, i, k] <= 1 for i in p + d for j in p + d for k in b
+             if i != j), name='forbidden')
+        m.addConstrs(
+            self.variables.w[i] <= self.parameters.capacity * self.variables.r[i] for i in self.parameters.nodes)
         m.write('L-shaped-Master.lp')
 
     def printsol(self, sub_model=None):
         if self.model.status == GRB.OPTIMAL:
             pass
-            for k in range(self.parameters.bus):
+            for k in range(self.bus):
                 print('Routing for bus %g' % (k + 1))
                 table = BeautifulTable()
                 table.column_headers = self.head
@@ -314,7 +317,7 @@ class MasterProblem:
                 print(table)
         if sub_model is not None:
             for s in sub_model.keys():
-                for k in range(sub_model[s].parameters.bus):
+                for k in range(self.bus):
                     print('Scenario %g Routing for bus %g' % (s + 1, k + 1))
                     table = BeautifulTable()
                     table.column_headers = self.head
@@ -376,7 +379,7 @@ class MasterProblem:
         m = self.model
 
         # z_sub = sum(self.scenarioprob[s] * self.submodel[s].relaxmod.ObjVal for s in range(self.scenarios))
-        sens = {(i, j, k): sum(self.submodel[s].relaxmod.getConstrByName('fix_x[{},{},{}]'.format(i,j,k)).pi
+        sens = {(i, j, k): sum(self.submodel[s].relaxmod.getConstrByName('fix_x[{},{},{}]'.format(i, j, k)).pi
                                * self.scenarioprob[s] for s in range(self.scenarios))
                 for i, j, k in self.variables.x.keys()}
         cut = len(self.cutlist)
@@ -393,7 +396,7 @@ class MasterProblem:
                      - sum(sens[i, j, k] * x_sol[i, j, k]
                            for i, j, k in self.variables.x.keys()) <= self.variables.th)
 
-    def update_bounds(self, z_sub, th_sol=None, objVal=None, objBst = None):
+    def update_bounds(self, z_sub, th_sol=None, objVal=None, objBst=None):
         theta = self.variables.th.X if th_sol is None else th_sol
         z_master = self.model.ObjVal if objVal is None else objVal
         self.data.ub = z_master - theta + z_sub
@@ -445,17 +448,17 @@ class SubProblem:
         CC = self.MP.ClassProb
         n = self.parameters.rides
         show = lambda x, y, z, i: (x.update({i: 1, (i + n): 1}),
-                                      y.update({i: 1, (i + n): 1}),
-                                      z.update({i: 0, (i + n): 0}))
+                                   y.update({i: 1, (i + n): 1}),
+                                   z.update({i: 0, (i + n): 0}))
         noshow = lambda x, y, z, i: (x.update({i: 1, (i + n): 0}),
-                                        y.update({i: 0, (i + n): 0}),
-                                        z.update({i: 1, (i + n): 0}))
+                                     y.update({i: 0, (i + n): 0}),
+                                     z.update({i: 1, (i + n): 0}))
         sameday = lambda x, y, z, i: (x.update({i: 0, (i + n): 0}),
-                                         y.update({i: 0, (i + n): 0}),
-                                         z.update({i: 0, (i + n): 0}))
+                                      y.update({i: 0, (i + n): 0}),
+                                      z.update({i: 0, (i + n): 0}))
         atthedoor = lambda x, y, z, i: (x.update({i: 1, (i + n): 0}),
-                                           y.update({i: 0, (i + n): 0}),
-                                           z.update({i: 0, (i + n): 0}))
+                                        y.update({i: 0, (i + n): 0}),
+                                        z.update({i: 0, (i + n): 0}))
         self.sim.alpha = {}
         self.sim.beta = {}
         self.sim.gamma = {}
@@ -477,7 +480,7 @@ class SubProblem:
         m = self.model
         p = self.parameters.pickup
         d = self.parameters.dropoff
-        b = list(range(self.MP.parameters.bus))
+        b = list(range(self.MP.bus))
 
         self.variables.xs = m.addVars(self.parameters.edges, b,
                                       vtype=GRB.BINARY, obj={(i, j, k): self.parameters.distance[i, j] for i, j in
@@ -488,7 +491,7 @@ class SubProblem:
         self.variables.ts = m.addVars(p + d, vtype=GRB.CONTINUOUS, lb=0, obj=0, name='t')
         self.variables.tds = m.addVars(self.MP.mapObject.depot(), b,
                                        vtype=GRB.CONTINUOUS, lb=0, obj=0.0001, name='t')
-        self.variables.ws = m.addVars(self.parameters.nodes, lb=0, ub=self.parameters.capacity*10,
+        self.variables.ws = m.addVars(self.parameters.nodes, lb=0, ub=self.parameters.capacity * 10,
                                       vtype=GRB.CONTINUOUS, name='w')
         self.variables.hs = m.addVars(self.parameters.edges, vtype=GRB.CONTINUOUS, obj=1, name='h')
         self.variables.rs = m.addVars(self.parameters.nodes, vtype=GRB.BINARY, obj=1, name='r')
@@ -503,7 +506,7 @@ class SubProblem:
         m.setObjective(
             (quicksum(self.parameters.distance[i, j] * (self.variables.xs[i, j, k] - self.variables.fix_x[i, j, k]) +
                       (self.variables.hs[i, j] - self.variables.fix_h[i, j])
-                      for i, j in self.parameters.edges for k in range(self.MP.parameters.bus))
+                      for i, j in self.parameters.edges for k in range(self.MP.bus))
              + quicksum((self.variables.p_es[i] - self.variables.fix_p_e[i])
                         + (self.variables.p_ls[i] - self.variables.fix_p_l[i])
                         for i in self.parameters.pickup + self.parameters.dropoff))
@@ -511,7 +514,7 @@ class SubProblem:
 
     def _constraints(self):
         m = self.model
-        b = list(range(self.MP.parameters.bus))
+        b = list(range(self.MP.bus))
         n = self.parameters.rides
         p = self.parameters.pickup
         d = self.parameters.dropoff
@@ -523,16 +526,17 @@ class SubProblem:
         m.addConstrs((self.variables.fix_x[i, j, k] <= self.variables.xs[i, j, k]
                       for i, j in self.parameters.edges for k in b if al[i] == 1 and al[j] == 1),
                      name='DnP-recourse')
-        m.addConstrs(quicksum(self.variables.xs[0, j, k]*al[j] for j in p + d)
+        m.addConstrs(quicksum(self.variables.xs[0, j, k] * al[j] for j in p + d)
                      + self.variables.xs[0, self.last, k] == 1 for k in b)
         m.addConstrs(quicksum(self.variables.xs[j, self.last, k] * al[j] for j in p + d)
                      + self.variables.xs[0, self.last, k] == 1 for k in b)
         # If you get an infeasibility error look at these ^^^ constraints change it to >= from ==
 
-        m.addConstrs((quicksum(al[j]*(self.variables.xs[i,j,k]) for j in self.parameters.nodes if i!=j and j!=0) -
-                      quicksum(al[j]*(self.variables.xs[j,i,k]) for j in self.parameters.nodes if i!=j and j!=self.last)
-                      >= 0 for i in p+d
-                      for k in b if al[i] == 1), name='flow_constraint')
+        m.addConstrs(
+            (quicksum(al[j] * (self.variables.xs[i, j, k]) for j in self.parameters.nodes if i != j and j != 0) -
+             quicksum(al[j] * (self.variables.xs[j, i, k]) for j in self.parameters.nodes if i != j and j != self.last)
+             >= 0 for i in p + d
+             for k in b if al[i] == 1), name='flow_constraint')
         m.addConstrs((quicksum(
             al[j] * (self.variables.xs[i + n, j, k]) for j in self.parameters.nodes if i + n != j and j != 0) -
                       quicksum(al[j] * (self.variables.xs[j, i, k]) for j in self.parameters.nodes if
@@ -542,7 +546,7 @@ class SubProblem:
         m.addConstrs((self.variables.ts[i] + self.parameters.time[i, j] + bt[i] * self.parameters.service_time
                       + ga[i] * self.parameters.wait_time + self.variables.hs[i, j]
                       <= self.variables.ts[j] - self.parameters.BigM *
-                       (self.variables.rs[i] + self.variables.xs[i, j, k] - 2) for i in
+                      (self.variables.rs[i] + self.variables.xs[i, j, k] - 2) for i in
                       p + d for j in p + d
                       for k in b if i != j and al[i] == 1 and al[j] == 1), name='hold-precedence-leq')
         m.addConstrs((self.variables.ts[i] + self.parameters.time[i, j] + bt[i] * self.parameters.service_time
@@ -581,7 +585,8 @@ class SubProblem:
         m.addConstrs((self.variables.ws[i] + self.parameters.load[j] <= self.variables.ws[j] +
                       (1 - self.variables.xs[i, j, k]) * self.parameters.BigM for i, j in self.parameters.edges for k in
                       b if al[i] == 1 and al[j] == 1), name='load-balance')
-        m.addConstrs(self.variables.ws[i] <= self.parameters.capacity*10*self.variables.rs[i] for i in self.parameters.nodes)
+        m.addConstrs(
+            self.variables.ws[i] <= self.parameters.capacity * 10 * self.variables.rs[i] for i in self.parameters.nodes)
         m.write('L-shaped-Sub.lp')
 
     def Fixfirststage(self):
@@ -601,7 +606,7 @@ class SubProblem:
         m.update()
         self.relaxmod = self.model.relax()
 
-    def fix_values(self, MP=None, sol = None):
+    def fix_values(self, MP=None, sol=None):
         if MP is None:
             m = self.MP
         else:

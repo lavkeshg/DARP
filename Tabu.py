@@ -7,9 +7,17 @@ import math
 class Tabu():
     """Implements a tabu search heuristic for DARP problem"""
 
-    def __init__(self, model, tabu_iterations=200, tabu_status=50, subset=5, rtoptm=20, roptiter=5):
+    def _init_weights(self):
+        self.weight = {
+            'alpha': 100,
+            'beta': 1,
+            'gamma': 1,
+            'delta': 1
+        }
+
+    def __init__(self, model, tabu_iterations=200, tabu_status=50, subset=5, rtoptm=20, roptiter=5, tsp=True):
         self.model = model
-        self.bus = list(range(self.model.parameters.bus))
+        self.bus = list(range(self.model.bus))
         self.N = self.model.parameters.rides
         self.pickup = self.model.parameters.pickup
         self.tabudict = {}
@@ -17,6 +25,7 @@ class Tabu():
         self.tabu_status = tabu_status
         self.rtoptm = rtoptm
         self.roptiter = roptiter
+        self.tsp = tsp
         self.best = None
         self.bestcandidate = None
         self.pickup_time = self.model.parameters.pickup_time
@@ -32,14 +41,9 @@ class Tabu():
         self.bestlist = []
         self.penalty = math.sqrt(len(self.bus)*len(self.pickup))*10
         self._init_weights()
-
-    def _init_weights(self):
-        self.weight = {
-            'alpha': 100,
-            'beta': 1,
-            'gamma': 1,
-            'delta': 1
-        }
+        if tsp:
+            self.model.initialize()
+            self.model.setLowerBound()
 
     def tabuheuristic(self):
         print('Building Initial Solution')
@@ -75,7 +79,6 @@ class Tabu():
                         self.best = sol
                     # print(itr)
             self.bestlist.append(self.best[max(self.bus)].head.value)
-        self.best[-1] = self.best[max(self.bus)].head.value
         return self.best
 
     def routeoptimization(self):
@@ -313,23 +316,24 @@ class Tabu():
                     node.time = schedule[k][0][3]
                     node.load = 0
         solution[-2] = cost
-        # rdm.shuffle(self.scenarios)
-        # S = self.scenarios[:self.subset]
-        # [self.model.submodel[s].fix_values(self, sol=xsol) for s in S]
-        # # Optimize Relaxed 2nd Stage
-        # [self.model.submodel[s].relax() for s in S]
-        # tsp = 0
-        # for s in S:
-        #     stat = self.model.submodel[s].relaxmod.status
-        #     if stat == 4 or stat == 3:
-        #         self.model.submodel[s].model.computeIIS()
-        #         self.model.submodel[s].model.write('infeasible.ilp')
-        #         self.model.submodel[s].model.write('infeasible.lp')
-        #         exit(0)
-        #     elif stat == 2:
-        #         tsp += self.model.scenarioprob[s] * self.model.submodel[s].relaxmod.ObjVal
-        #         # print(tsp)
-        #         # self.model.submodel[s].relaxmod.write('feasible.lp')
-        #         # self.model.submodel[s].relaxmod.write('feasible.sol')
-        # cost += tsp
+        if self.tsp:
+            rdm.shuffle(self.scenarios)
+            S = self.scenarios[:self.subset]
+            [self.model.submodel[s].fix_values(self, sol=xsol) for s in S]
+            # Optimize Relaxed 2nd Stage
+            [self.model.submodel[s].relax() for s in S]
+            tsp = 0
+            for s in S:
+                stat = self.model.submodel[s].relaxmod.status
+                if stat == 4 or stat == 3:
+                    self.model.submodel[s].model.computeIIS()
+                    self.model.submodel[s].model.write('infeasible.ilp')
+                    self.model.submodel[s].model.write('infeasible.lp')
+                    exit(0)
+                elif stat == 2:
+                    tsp += self.model.scenarioprob[s] * self.model.submodel[s].relaxmod.ObjVal
+                    # print(tsp)
+                    # self.model.submodel[s].relaxmod.write('feasible.lp')
+                    # self.model.submodel[s].relaxmod.write('feasible.sol')
+            cost += tsp
         solution[-1] += cost

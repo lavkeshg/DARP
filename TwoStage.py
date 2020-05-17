@@ -16,7 +16,7 @@ class MasterProblem:
         self.mapObject = Map
         self.last = self.mapObject.depot()[1]
         self.parameters = Structure()
-        self.parameters.bus = bus
+        self.bus = bus
         self.variables = Structure()
         self.results = Structure()
         self.constraints = Structure()
@@ -62,31 +62,31 @@ class MasterProblem:
         self.parameters.pickup_time.update(self.parameters.dropoff_time)
         self.parameters.nodes = self.mapObject.nodes()
         self.parameters.rides = self.mapObject.N_riders
-        self.parameters.edges = {(i, j) for i, j in self.parameters.distance.keys() if j != 0 and i != self.last}
+        self.parameters.edges = {(i, j) for i, j in self.parameters.distance.keys() if j != 0 and i != self.last and i != j}
 
     def _variables(self):
         m = self.model
         self.parameters.capacity = 3
 
-        self.variables.x = m.addVars(self.parameters.edges, list(range(self.parameters.bus)),
+        self.variables.x = m.addVars(self.parameters.edges, list(range(self.bus)),
                                      vtype=GRB.BINARY,
                                      obj={(i, j, k): self.parameters.distance[i, j] for i, j in
                                           self.parameters.distance.keys()
-                                          for k in range(self.parameters.bus)}, name='x')
+                                          for k in range(self.bus)}, name='x')
         self.variables.p_e = m.addVars(self.parameters.pickup + self.parameters.dropoff,
                                        vtype=GRB.CONTINUOUS, lb=0, obj=1, name='p_e')
         self.variables.p_l = m.addVars(self.parameters.pickup + self.parameters.dropoff,
                                        vtype=GRB.CONTINUOUS, lb=0, obj=1, name='p_l')
         self.variables.t = m.addVars(self.parameters.pickup + self.parameters.dropoff,
                                      vtype=GRB.CONTINUOUS, lb=0, obj=0, name='t')
-        self.variables.td = m.addVars(self.mapObject.depot(), list(range(self.parameters.bus)),
+        self.variables.td = m.addVars(self.mapObject.depot(), list(range(self.bus)),
                                       vtype=GRB.CONTINUOUS, lb=0, obj=0, name='t')
         self.variables.w = m.addVars(self.parameters.nodes, lb=0, ub=self.parameters.capacity, vtype=GRB.CONTINUOUS,
                                      name='w')
         self.variables.h = m.addVars(self.parameters.edges, vtype=GRB.CONTINUOUS, obj=1, name='h')
         # m.setObjective(quicksum(self.variables.x[i,j,k]*self.parameters.distance[i, j]
         #                         + self.variables.h[i,j]*self.variables.w[i]
-        #                         for i,j in self.parameters.edges for k in range(self.parameters.bus))+
+        #                         for i,j in self.parameters.edges for k in range(self.bus))+
         #                quicksum(self.variables.p_e[i] + self.variables.p_l[i] for i in self.parameters.pickup +
         #                         self.parameters.dropoff))
         m.Params.NodefileStart = 0.5
@@ -94,7 +94,7 @@ class MasterProblem:
 
     def _constraints(self):
         m = self.model
-        b = range(self.parameters.bus)
+        b = range(self.bus)
         n = self.parameters.rides
         p = self.parameters.pickup
         d = self.parameters.dropoff
@@ -151,7 +151,7 @@ class MasterProblem:
 
     def printsol(self, sub_model=None):
         if self.model.status == GRB.OPTIMAL:
-            for k in range(self.parameters.bus):
+            for k in range(self.bus):
                 print('Routing for bus %g' % (k + 1))
                 table = BeautifulTable()
                 table.column_headers = self.head
@@ -269,7 +269,7 @@ class TwoStage:
         self.parameters.nodes = self.MP.parameters.nodes
         self.parameters.rides = self.MP.parameters.rides
         self.parameters.edges = self.MP.parameters.edges
-        self.parameters.bus = self.MP.parameters.bus
+        self.bus = self.MP.bus
         self.parameters.xi = list(range(self.scenarios))
         self.parameters.wait_time = 7
         self._scenarioParamGen()
@@ -317,7 +317,7 @@ class TwoStage:
         xi = self.scenarios
         p = self.parameters.pickup
         d = self.parameters.dropoff
-        b = list(range(self.MP.parameters.bus))
+        b = list(range(self.MP.bus))
 
         self.variables.xs = m.addVars(self.parameters.edges, b, S,
                                       vtype=GRB.BINARY, obj={(i, j, k, s): self.parameters.distance[i, j]/xi for i, j in
@@ -340,7 +340,7 @@ class TwoStage:
             quicksum(self.MP.variables.x[i, j, k] * self.parameters.distance[i, j]
                      + self.MP.variables.h[i, j]
                      # * self.MP.variables.w[i]
-                     for i, j in self.parameters.edges for k in range(self.MP.parameters.bus)) +
+                     for i, j in self.parameters.edges for k in range(self.MP.bus)) +
             quicksum(self.MP.variables.p_e[i] + self.MP.variables.p_l[i] for i in self.parameters.pickup +
                      self.parameters.dropoff) +
             # Sub-problem
@@ -348,7 +348,7 @@ class TwoStage:
                                                                                self.MP.variables.x[i, j, k])
                                              + (self.variables.hs[i, j, s] - self.MP.variables.h[i, j])
                                              for i, j in self.parameters.edges
-                                             for k in range(self.MP.parameters.bus) for s in self.parameters.xi) +
+                                             for k in range(self.MP.bus) for s in self.parameters.xi) +
                                     quicksum((self.variables.p_es[i, s] - self.MP.variables.p_e[i])
                                              + (self.variables.p_ls[i, s] - self.MP.variables.p_l[i])
                                              for i in self.parameters.pickup + self.parameters.dropoff
@@ -358,7 +358,7 @@ class TwoStage:
     def _constraints(self):
         m = self.model
         S = self.parameters.xi
-        b = range(self.MP.parameters.bus)
+        b = range(self.MP.bus)
         n = self.parameters.rides
         p = self.parameters.pickup
         d = self.parameters.dropoff
