@@ -34,7 +34,7 @@ class MasterProblem:
         # Method instantiation
         self._parameters()
         # self._build_model()
-        self._Benders_init()
+        # self._Benders_init()
         self.__ClassProb__()
 
     def _build_model(self):
@@ -193,7 +193,8 @@ class MasterProblem:
         self.parameters.pickup_time.update(self.parameters.dropoff_time)
         self.parameters.nodes = self.mapObject.nodes()
         self.parameters.rides = self.mapObject.N_riders
-        self.parameters.edges = {(i, j) for i, j in self.parameters.distance.keys() if i != self.last and j != 0}
+        self.parameters.edges = {(i, j) for i, j in self.parameters.distance.keys()\
+                                    if i != self.last and j != 0 and i != j}
 
     def _variables(self):
         m = self.model

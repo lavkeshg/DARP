@@ -6,7 +6,7 @@ from LinkedList import *
 class Tabu():
     """Implements a tabu search heuristic for DARP problem"""
 
-    def __init__(self, model, tabu_iterations=200, tabu_status=20, subset=2):
+    def __init__(self, model, tabu_iterations=200, tabu_status=50, subset=5, rtoptm=20, roptiter=5):
         self.model = model
         self.bus = list(range(self.model.parameters.bus))
         self.N = self.model.parameters.rides
@@ -14,6 +14,8 @@ class Tabu():
         self.tabudict = {}
         self.tabuiter = tabu_iterations
         self.tabu_status = tabu_status
+        self.rtoptm = rtoptm
+        self.roptiter = roptiter
         self.best = None
         self.bestcandidate = None
         self.pickup_time = self.model.parameters.pickup_time
@@ -26,11 +28,12 @@ class Tabu():
         self.routetime = self.model.mapObject.servicetime + 480
         self.scenarios = list(range(self.model.scenarios))
         self.subset = min(subset, self.model.scenarios)
+        self.bestlist = []
         self._init_weights()
 
     def _init_weights(self):
         self.weight = {
-            'alpha': 1,
+            'alpha': 100,
             'beta': 1,
             'gamma': 1,
             'delta': 1
@@ -41,28 +44,83 @@ class Tabu():
         self.bestcandidate = self.initialSolution()
         self.solutionEval(self.bestcandidate)
         self.best = self.bestcandidate
-        iter = 0
+        self.bestlist.append(self.best[max(self.bus)].head.value)
         print('Starting Heuristic')
-        while iter != self.tabuiter:
+        for iter in range(self.tabuiter):
             for i, k in self.tabudict.keys():
-                decr = self.tabudict[i, k] - 1
-                self.tabudict[i, k] = max(0, decr)
+                decr = self.tabudict[i, k][0] - 1
+                self.tabudict[i, k][0] = max(0, decr)
             ngbr = self.neighborhoodGen()
-            print('Neighborhood length: %d (iteration %d)' % (len(ngbr), iter))
+            print('Neighborhood length: %d (iteration %d)' % (len(ngbr), iter+1))
             [self.solutionEval(n) for n in ngbr]
             for candidate in ngbr:
                 if candidate[-1] < self.bestcandidate[-1]:
                     self.bestcandidate = candidate
-            if self.bestcandidate[-1] < self.best[-1]:
-                self.best = self.bestcandidate
+            print(self.bestcandidate[-1],self.best[-1])
+            if self.bestcandidate[-1] < self.best[-1] or iter % self.rtoptm == 0:
+                if self.bestcandidate[-1] < self.best[-1]:
+                    self.best = self.bestcandidate
                 for k in self.bus:
                     for i in self.best[k]:
                         if i in self.pickup:
-                            self.tabudict[i, k] = 0
-                # for k in self.optmiter
-                #     self.routeoptimization(self.best)
-            iter += 1
+                            self.tabudict[i, k][0] = 0
+                for itr in range(min(self.roptiter,2*len(self.pickup))):
+                    sol = self.routeoptimization()
+                    samesol = [self.best[k].list()==sol[k].list() for k in self.bus]
+                    if sum(samesol) != len(self.bus):
+                        self.solutionEval(sol)
+                    if sol[-1] < self.best[-1]:
+                        self.best = sol
+                    # print(itr)
+            self.bestlist.append(self.best[max(self.bus)].head.value)
+        self.best[-1] = self.best[max(self.bus)].head.value
         return self.best
+
+    def routeoptimization(self):
+        sol = self.best
+        prioritynodes = {k: PriorityQueue() for k in self.bus}
+        opt = 0
+        for k in self.bus:
+            for i in sol[k]:
+                if i != 0 and i != self.model.last:
+                    if not sol[k][i].value.empty():
+                        val, criteria = sol[k][i].value.get()
+                        prioritynodes[k].put((val, criteria, i))
+            if prioritynodes[k].empty():
+                opt += 1
+            if opt == len(self.bus):
+                return sol
+        for k in self.bus:
+            sl = sol[k].copy()
+            if not prioritynodes[k].empty():
+                val, criteria, pnode = prioritynodes[k].get()
+                val = -val
+                node = sl[pnode]
+                sl.remove(pnode)
+                insrt = None
+                insrtnw = 0
+                if pnode not in self.pickup:
+                    insrt = False
+                    insrtnw = pnode - self.N
+                for i in sl:
+                    curr = sl[i]
+                    if insrt or insrtnw == i:
+                        if criteria == 'L' and i != self.model.last:
+                            if curr.time > node.time and \
+                            curr.load < self.model.parameters.capacity or curr.next.key == pnode+self.N:
+                                node.next = curr.next
+                                curr.next = node
+                                break
+                        if criteria == 'T' and i != self.model.last:
+                            if curr.time > self.early[pnode] or \
+                            curr.next.time > self.late[pnode] or curr.next.key == pnode+self.N:
+                                node.next = curr.next
+                                curr.next = node
+                                break
+                        insrt = True
+                if pnode in sl.list():
+                    sol[k] = sl
+        return sol
 
     def initialSolution(self):
         solution = {i: LinkedList() for i in self.bus}
@@ -85,7 +143,7 @@ class Tabu():
             for i in self.bestcandidate[k]:
                 if i in self.pickup:
                     ngbr = {k: sol[k].copy() for k in self.bus}
-                    self.tabudict.update({(i, k): self.tabu_status})
+                    self.tabudict.update({(i, k): [self.tabu_status, })
                     for b in availbus:
                         try:
                             if self.tabudict[i, b] == 0:
@@ -96,9 +154,8 @@ class Tabu():
                                     n = ngbr[b][n]
                                     if n.next.time >= node.time or \
                                             n.next.key == self.model.last:
-                                        temp = n.next
+                                        node.next = n.next
                                         n.next = node
-                                        node.next = temp
                                         if node.key != i + self.N:
                                             node = ngbr[k][i + self.N]
                                             ngbr[k].remove(i + self.N)
@@ -115,9 +172,8 @@ class Tabu():
                                 n = ngbr[b][n]
                                 if n.next.time >= node.time or \
                                         n.next.key == self.model.last:
-                                    temp = n.next
+                                    node.next = n.next
                                     n.next = node
-                                    node.next = temp
                                     if node.key != i + self.N:
                                         node = ngbr[k][i + self.N]
                                         ngbr[k].remove(i + self.N)
@@ -153,9 +209,10 @@ class Tabu():
             if type(s) == list:
                 f = PriorityQueue()
                 if s[st] != 0:
-                    f.put(min(self.late[s[st]] - schedule[k][s[st]][1],
+                    f.put(max(0,
+                    min(self.late[s[st]] - schedule[k][s[st]][1],
                               self.ridetime - (schedule[k][s[st]][3] -
-                                               schedule[k][s[st] + self.N][1])))
+                                               schedule[k][s[st] + self.N][1]))))
                 for i in range(st + 1, len(s)):
                     curr = schedule[k][s[i]]
                     w = 0
@@ -165,13 +222,15 @@ class Tabu():
                         if s[j] == self.model.last:
                             W = w
                     if s[i] in self.pickup:
-                        w += min(self.late[s[i]] - curr[1],
+                        w += max(0,
+                        min(self.late[s[i]] - curr[1],
                                  self.ridetime - (schedule[k][s[i] + self.N][1] -
-                                                  curr[3]))
+                                                  curr[3])))
                     if s[i] not in self.pickup and s[i] != self.model.last:
-                        w += min(self.late[s[i]] - curr[1],
+                        w += max(0,
+                        min(self.late[s[i]] - curr[1],
                                  self.ridetime - (schedule[k][s[i] - self.N][3] -
-                                                  curr[1]))
+                                                  curr[1])))
                     f.put(w)
                 return min(f.get(), W)
             else:
@@ -240,26 +299,28 @@ class Tabu():
                         + self.weight['delta'] * ridetm
                 if i != 0:
                     node.value = PriorityQueue()
-                    [node.value.put(i) for i in ((load, 'L'), (tmwndw, 'T'), (ridetm, 'R'))]
+                    [node.value.put(i) for i in ((-load, 'L'), (-tmwndw, 'T'), (-ridetm, 'R'))]
                 else:
-                    node.value = cost
-        rdm.shuffle(self.scenarios)
-        S = self.scenarios[:self.subset]
-        [self.model.submodel[s].fix_values(self, sol=xsol) for s in S]
-        # Optimize Relaxed 2nd Stage
-        [self.model.submodel[s].relax() for s in S]
-        tsp = 0
-        for s in S:
-            stat = self.model.submodel[s].relaxmod.status
-            if stat == 4 or stat == 3:
-                self.model.submodel[s].model.computeIIS()
-                self.model.submodel[s].model.write('infeasible.ilp')
-                self.model.submodel[s].model.write('infeasible.lp')
-                exit(0)
-            elif stat == 2:
-                tsp += self.model.scenarioprob[s] * self.model.submodel[s].relaxmod.ObjVal
-                print(tsp)
-                # self.model.submodel[s].relaxmod.write('feasible.lp')
-                # self.model.submodel[s].relaxmod.write('feasible.sol')
-        cost += tsp
+                    node.time = schedule[k][0][3]
+                    node.load = 0
+        solution[-2] = cost
+        # rdm.shuffle(self.scenarios)
+        # S = self.scenarios[:self.subset]
+        # [self.model.submodel[s].fix_values(self, sol=xsol) for s in S]
+        # # Optimize Relaxed 2nd Stage
+        # [self.model.submodel[s].relax() for s in S]
+        # tsp = 0
+        # for s in S:
+        #     stat = self.model.submodel[s].relaxmod.status
+        #     if stat == 4 or stat == 3:
+        #         self.model.submodel[s].model.computeIIS()
+        #         self.model.submodel[s].model.write('infeasible.ilp')
+        #         self.model.submodel[s].model.write('infeasible.lp')
+        #         exit(0)
+        #     elif stat == 2:
+        #         tsp += self.model.scenarioprob[s] * self.model.submodel[s].relaxmod.ObjVal
+        #         # print(tsp)
+        #         # self.model.submodel[s].relaxmod.write('feasible.lp')
+        #         # self.model.submodel[s].relaxmod.write('feasible.sol')
+        # cost += tsp
         solution[-1] = cost
