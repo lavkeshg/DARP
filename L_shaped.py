@@ -41,6 +41,14 @@ class MasterProblem:
         # self.setLowerBound()
         self.__ClassProb__()
 
+    def getcancel(self):
+        mostcancel = {i: 0 for i in self.parameters.pickup}
+        for i in self.parameters.pickup:
+            for s in range(self.scenarios):
+                mostcancel[i] += 2 - self.submodel[s].sim.alpha[i] - self.submodel[s].sim.alpha[i+self.parameters.rides]
+        mostcancel = sorted(mostcancel.items(), key=lambda x: (x[1]))
+        mostcancel = [i for i, j in mostcancel]
+        return mostcancel
 
     def _build_model(self):
         self._parameters()
@@ -527,9 +535,9 @@ class SubProblem:
                       for i, j in self.parameters.edges for k in b if al[i] == 1 and al[j] == 1),
                      name='DnP-recourse')
         m.addConstrs(quicksum(self.variables.xs[0, j, k] * al[j] for j in p + d)
-                     + self.variables.xs[0, self.last, k] == 1 for k in b)
+                     + self.variables.xs[0, self.last, k] >= 1 for k in b)
         m.addConstrs(quicksum(self.variables.xs[j, self.last, k] * al[j] for j in p + d)
-                     + self.variables.xs[0, self.last, k] == 1 for k in b)
+                     + self.variables.xs[0, self.last, k] >= 1 for k in b)
         # If you get an infeasibility error look at these ^^^ constraints change it to >= from ==
 
         m.addConstrs(

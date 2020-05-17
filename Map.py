@@ -84,5 +84,5 @@ class Map(Rides):
         return dist
 
     def time(self):
-        run = {(i, j): self.distance[i, j]/5 for i in self.nodes() for j in self.nodes()}
+        run = {(i, j): self.distance[i, j]/3 for i in self.nodes() for j in self.nodes()}
         return run
