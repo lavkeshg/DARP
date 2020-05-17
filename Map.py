@@ -1,4 +1,5 @@
 import random
+import math
 
 class Rides:
 
@@ -62,21 +63,26 @@ class Map(Rides):
 
     def __init__(self, N, start_time='8:00', service_time='6:00'):
         super().__init__(N, start_time, service_time)
+        self.node = self.coordinates()
         self.distance = self.distance()
         self.run = self.time()
 
+    def _calculateDistance(self,x,y):
+        x1,y1 = x
+        x2,y2 = y
+        dist = math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+        return round(dist)
+
+    def coordinates(self):
+        n = {i: (random.random()*40, random.random()*40) for i in self.nodes()}
+        n[self.depot()[1]] = n[0]
+        return n
+
     def distance(self):
-        dist = {(i, j): random.randint(20, 40) for i in self.nodes() for j in self.nodes() if i < j}
-        for i in self.nodes():
-            for j in self.nodes():
-                if i < j:
-                    dist[j, i] = dist[i, j]
+        dist = {(i, j): self._calculateDistance(self.node[i],self.node[j])\
+                            for i in self.nodes() for j in self.nodes()}
         return dist
 
     def time(self):
-        run = {(i, j): random.randint(7, 15) for i in self.nodes() for j in self.nodes() if i < j}
-        for i in self.nodes():
-            for j in self.nodes():
-                if i < j:
-                    run[j, i] = run[i, j]
+        run = {(i, j): self.distance[i, j]/5 for i in self.nodes() for j in self.nodes()}
         return run

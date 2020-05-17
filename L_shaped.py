@@ -29,9 +29,12 @@ class MasterProblem:
         # Instance attribute initialization
         self.submodel = None
         self.masterLP = None
+        self.head = ['Pick-up', 'Drop', 'Pickup time', 'Drop-off time']
+        self.row = {}
         # Method instantiation
-        self._Benders_init()
-        self._build_model()
+        self._parameters()
+        # self._build_model()
+        # self._Benders_init()
         self.__ClassProb__()
 
     def _build_model(self):
@@ -43,14 +46,12 @@ class MasterProblem:
         self.model.Params.Presolve = 2
         self.model.Params.MIPFocus = 2
         self.model.params.Heuristics = 0.05
-        self.head = ['Pick-up', 'Drop', 'Pickup time', 'Drop-off time']
-        self.row = {}
         self.infeasol = []
 
     def optimize(self):
         self.model.Params.OutputFlag = 0
         self.model.optimize()
-        self.setLowerBound()
+        # self.setLowerBound()
         self._Benders_decomp()
         self.setMIP()
         self.solutions = []
@@ -144,6 +145,8 @@ class MasterProblem:
         self.subobjBst = 0
         self.LazySub = 0
         self.LazyInt = 0
+        self.setLowerBound()
+
 
     def _Benders_decomp(self):
         [self.submodel[i].fix_values(self) for i in range(self.scenarios)]
@@ -190,7 +193,8 @@ class MasterProblem:
         self.parameters.pickup_time.update(self.parameters.dropoff_time)
         self.parameters.nodes = self.mapObject.nodes()
         self.parameters.rides = self.mapObject.N_riders
-        self.parameters.edges = {(i, j) for i, j in self.parameters.distance.keys() if i != self.last and j != 0}
+        self.parameters.edges = {(i, j) for i, j in self.parameters.distance.keys()\
+                                    if i != self.last and j != 0 and i != j}
 
     def _variables(self):
         m = self.model
@@ -288,6 +292,7 @@ class MasterProblem:
 
     def printsol(self, sub_model=None):
         if self.model.status == GRB.OPTIMAL:
+            pass
             for k in range(self.parameters.bus):
                 print('Routing for bus %g' % (k + 1))
                 table = BeautifulTable()
@@ -307,65 +312,65 @@ class MasterProblem:
                                              str(timedelta(minutes=self.variables.td[j, k].X)).rsplit(':', 1)[0]]
                         table.append_row(self.row[i, j, k])
                 print(table)
-            if sub_model is not None:
-                for s in sub_model.keys():
-                    for k in range(sub_model[s].parameters.bus):
-                        print('Scenario %g Routing for bus %g' % (s + 1, k + 1))
-                        table = BeautifulTable()
-                        table.column_headers = self.head
+        if sub_model is not None:
+            for s in sub_model.keys():
+                for k in range(sub_model[s].parameters.bus):
+                    print('Scenario %g Routing for bus %g' % (s + 1, k + 1))
+                    table = BeautifulTable()
+                    table.column_headers = self.head
 
-                        for i, j in sub_model[s].parameters.edges:
-                            if sub_model[s].variables.xs[i, j, k].X > 0.5 and i not in [0, sub_model[s].last] \
-                                    and j not in [0, sub_model[s].last]:
+                    for i, j in sub_model[s].parameters.edges:
+                        if sub_model[s].variables.xs[i, j, k].X > 0.5 and i not in [0, sub_model[s].last] \
+                                and j not in [0, sub_model[s].last]:
+                            self.row[i, j, k] = [i, j,
+                                                 str(timedelta(minutes=sub_model[s].variables.ts[i].X)).rsplit(
+                                                     ':', 1)[0],
+                                                 str(timedelta(minutes=sub_model[s].variables.ts[j].X)).rsplit(
+                                                     ':', 1)[0]]
+                            table.append_row(self.row[i, j, k])
+                        elif sub_model[s].variables.xs[i, j, k].X > 0.5 and i == 0:
+                            if j != self.last:
                                 self.row[i, j, k] = [i, j,
-                                                        str(timedelta(minutes=sub_model[s].variables.ts[i].X)).rsplit(
-                                                            ':', 1)[0],
-                                                        str(timedelta(minutes=sub_model[s].variables.ts[j].X)).rsplit(
-                                                            ':', 1)[0]]
-                                table.append_row(self.row[i, j, k])
-                            elif sub_model[s].variables.xs[i, j, k].X > 0.5 and i == 0:
-                                if j != self.last:
-                                    self.row[i, j, k] = [i, j,
-                                                            str(timedelta(
-                                                                minutes=sub_model[s].variables.tds[i, k].X)).rsplit(
-                                                                ':', 1)[
-                                                                0],
-                                                            str(timedelta(
-                                                                minutes=sub_model[s].variables.ts[j].X)).rsplit(':',
-                                                                                                                 1)[0]]
-                                else:
-                                    self.row[i, j, k] = [i, j,
-                                                            str(timedelta(
-                                                                minutes=sub_model[s].variables.tds[i, k].X)).rsplit(
-                                                                ':', 1)[
-                                                                0],
-                                                            str(timedelta(
-                                                                minutes=sub_model[s].variables.tds[j, k].X)).rsplit(
-                                                                ':',
-                                                                1)[0]]
-                                table.append_row(self.row[i, j, k])
-                            elif sub_model[s].variables.xs[i, j, k].X > 0.5 and j == sub_model[s].last:
-                                if i != 0:
-                                    self.row[i, j, k] = [i, j,
-                                                            str(timedelta(
-                                                                minutes=sub_model[s].variables.ts[i].X)).rsplit(':',
-                                                                                                                 1)[0],
-                                                            str(timedelta(
-                                                                minutes=sub_model[s].variables.tds[j, k].X)).rsplit(
-                                                                ':', 1)[
-                                                                0]]
-                                else:
-                                    self.row[i, j, k] = [i, j,
-                                                            str(timedelta(
-                                                                minutes=sub_model[s].variables.tds[i, k].X)).rsplit(
-                                                                ':',
-                                                                1)[0],
-                                                            str(timedelta(
-                                                                minutes=sub_model[s].variables.tds[j, k].X)).rsplit(
-                                                                ':', 1)[
-                                                                0]]
-                                table.append_row(self.row[i, j, k])
-                        print(table)
+                                                     str(timedelta(
+                                                         minutes=sub_model[s].variables.tds[i, k].X)).rsplit(
+                                                         ':', 1)[
+                                                         0],
+                                                     str(timedelta(
+                                                         minutes=sub_model[s].variables.ts[j].X)).rsplit(':',
+                                                                                                         1)[0]]
+                            else:
+                                self.row[i, j, k] = [i, j,
+                                                     str(timedelta(
+                                                         minutes=sub_model[s].variables.tds[i, k].X)).rsplit(
+                                                         ':', 1)[
+                                                         0],
+                                                     str(timedelta(
+                                                         minutes=sub_model[s].variables.tds[j, k].X)).rsplit(
+                                                         ':',
+                                                         1)[0]]
+                            table.append_row(self.row[i, j, k])
+                        elif sub_model[s].variables.xs[i, j, k].X > 0.5 and j == sub_model[s].last:
+                            if i != 0:
+                                self.row[i, j, k] = [i, j,
+                                                     str(timedelta(
+                                                         minutes=sub_model[s].variables.ts[i].X)).rsplit(':',
+                                                                                                         1)[0],
+                                                     str(timedelta(
+                                                         minutes=sub_model[s].variables.tds[j, k].X)).rsplit(
+                                                         ':', 1)[
+                                                         0]]
+                            else:
+                                self.row[i, j, k] = [i, j,
+                                                     str(timedelta(
+                                                         minutes=sub_model[s].variables.tds[i, k].X)).rsplit(
+                                                         ':',
+                                                         1)[0],
+                                                     str(timedelta(
+                                                         minutes=sub_model[s].variables.tds[j, k].X)).rsplit(
+                                                         ':', 1)[
+                                                         0]]
+                            table.append_row(self.row[i, j, k])
+                    print(table)
 
     def add_sub_cuts(self, z_sub, x_sol=None):
         m = self.model
@@ -426,6 +431,7 @@ class SubProblem:
         self._variables()
         self._constraints()
         self.model.Params.OutputFlag = 0
+        # self.model.Params.DualReductions = 1
         self._setobjective()
 
     def _parameters(self):
@@ -518,11 +524,21 @@ class SubProblem:
                       for i, j in self.parameters.edges for k in b if al[i] == 1 and al[j] == 1),
                      name='DnP-recourse')
         m.addConstrs(quicksum(self.variables.xs[0, j, k]*al[j] for j in p + d)
-                     + self.variables.xs[0, self.last, k] >= 1 for k in b)
+                     + self.variables.xs[0, self.last, k] == 1 for k in b)
+        m.addConstrs(quicksum(self.variables.xs[j, self.last, k] * al[j] for j in p + d)
+                     + self.variables.xs[0, self.last, k] == 1 for k in b)
+        # If you get an infeasibility error look at these ^^^ constraints change it to >= from ==
+
         m.addConstrs((quicksum(al[j]*(self.variables.xs[i,j,k]) for j in self.parameters.nodes if i!=j and j!=0) -
                       quicksum(al[j]*(self.variables.xs[j,i,k]) for j in self.parameters.nodes if i!=j and j!=self.last)
                       >= 0 for i in p+d
                       for k in b if al[i] == 1), name='flow_constraint')
+        m.addConstrs((quicksum(
+            al[j] * (self.variables.xs[i + n, j, k]) for j in self.parameters.nodes if i + n != j and j != 0) -
+                      quicksum(al[j] * (self.variables.xs[j, i, k]) for j in self.parameters.nodes if
+                               i != j and j != self.last)
+                      >= 0 for i in p
+                      for k in b if al[i + n] == 1), name='pick-drop')
         m.addConstrs((self.variables.ts[i] + self.parameters.time[i, j] + bt[i] * self.parameters.service_time
                       + ga[i] * self.parameters.wait_time + self.variables.hs[i, j]
                       <= self.variables.ts[j] - self.parameters.BigM *
@@ -633,11 +649,16 @@ class SubProblem:
                 except KeyError:
                     self.relaxmod.getConstrByName('fix_h[{},{}]'.format(i, j)).rhs = 0
                     self.fixedconst_h[i, j].rhs = 0
-            for i in self.fixedconst_p_e.keys():
-                self.relaxmod.getConstrByName('fix_p_e[{}]'.format(i)).rhs = \
-                    round(sol[2][i], 4)
-                self.fixedconst_p_e[i].rhs = \
-                    round(sol[2][i])
+            try:
+                for i in self.fixedconst_p_e.keys():
+                    self.relaxmod.getConstrByName('fix_p_e[{}]'.format(i)).rhs = \
+                        round(sol[2][i], 4)
+                    self.fixedconst_p_e[i].rhs = \
+                        round(sol[2][i])
+            except KeyError:
+                for i in self.fixedconst_p_e.keys():
+                    self.relaxmod.getConstrByName('fix_p_e[{}]'.format(i)).rhs = 0
+                    self.fixedconst_p_e[i].rhs = 0
             for i in self.fixedconst_p_l.keys():
                 self.relaxmod.getConstrByName('fix_p_l[{}]'.format(i)).rhs = \
                     round(sol[3][i], 4)

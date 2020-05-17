@@ -1,14 +1,14 @@
 class Node():
     '''The Node'''
 
-    def __init__(self, key, bus=None, value=None, time=None):
+    def __init__(self, key, bus=None, value=None, time=None, load=None):
         self.next = None
         self.prev = None
         self.key = key
         self.value = value
         self.bus = bus
         self.time = time
-        self.load = None
+        self.load = load
 
 class LinkedList():
     '''
@@ -77,12 +77,12 @@ class LinkedList():
     def copy(self):
         if self.head is not None:
             list = LinkedList()
-            list.head = Node(self.head.key, self.head.bus, self.head.value, self.head.time)
+            list.head = Node(self.head.key, self.head.bus, self.head.value, self.head.time, self.head.load)
             node = self.head
             temp = list.head
             while node is not None:
                 if node.next is not None:
-                    temp.next = Node(node.next.key, node.next.bus, node.next.value, node.next.time)
+                    temp.next = Node(node.next.key, node.next.bus, node.next.value, node.next.time, node.next.load)
                 temp = temp.next
                 node = node.next
             return list
