@@ -1,6 +1,7 @@
 import random as rdm
 from queue import PriorityQueue
 from LinkedList import *
+import math
 
 
 class Tabu():
@@ -29,6 +30,7 @@ class Tabu():
         self.scenarios = list(range(self.model.scenarios))
         self.subset = min(subset, self.model.scenarios)
         self.bestlist = []
+        self.penalty = math.sqrt(len(self.bus)*len(self.pickup))*10
         self._init_weights()
 
     def _init_weights(self):
@@ -124,6 +126,7 @@ class Tabu():
 
     def initialSolution(self):
         solution = {i: LinkedList() for i in self.bus}
+        solution[-1] = 0
         for i in self.bus:
             solution[i].append(Node(0, bus=i))
         rdm.shuffle(self.pickup)
@@ -143,10 +146,14 @@ class Tabu():
             for i in self.bestcandidate[k]:
                 if i in self.pickup:
                     ngbr = {k: sol[k].copy() for k in self.bus}
-                    self.tabudict.update({(i, k): [self.tabu_status, })
+                    ngbr[-1] = 0
+                    try:
+                        self.tabudict[i, k][0] = self.tabu_status
+                    except KeyError:
+                        self.tabudict.update({(i, k): [self.tabu_status, 1]})
                     for b in availbus:
                         try:
-                            if self.tabudict[i, b] == 0:
+                            if self.tabudict[i, b][0] == 0:
                                 node = ngbr[k][i]
                                 ngbr[k].remove(i)
                                 node.bus = b
@@ -162,9 +169,10 @@ class Tabu():
                                             node.bus = b
                                         else:
                                             break
+                                ngbr[-1] += self.penalty * self.tabudict[i, b][1]
                                 break
                         except KeyError:
-                            self.tabudict[i, b] = 0
+                            self.tabudict[i, b] = [0, 0]
                             node = ngbr[k][i]
                             ngbr[k].remove(i)
                             node.bus = b
@@ -180,6 +188,7 @@ class Tabu():
                                         node.bus = b
                                     else:
                                         break
+                            ngbr[-1] += self.penalty*self.tabudict[i, b][1]
                             break
                     neighborhood.append(ngbr)
         return neighborhood
@@ -323,4 +332,4 @@ class Tabu():
         #         # self.model.submodel[s].relaxmod.write('feasible.lp')
         #         # self.model.submodel[s].relaxmod.write('feasible.sol')
         # cost += tsp
-        solution[-1] = cost
+        solution[-1] += cost
