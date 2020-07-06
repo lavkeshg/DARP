@@ -147,7 +147,7 @@ class MasterProblem:
                       (1 - self.variables.x[i, j, k]) * self.parameters.BigM for i, j in self.parameters.edges for k in
                       b), name='load-balance')
         # m.addConstrs(self.variables.td[i,k] >= 480 for i in self.mapObject.depot() for k in b)
-        m.write('TwoSP-Master.lp')
+        m.write('./Reports/TwoSP-Master.lp')
 
     def printsol(self, sub_model=None):
         if self.model.status == GRB.OPTIMAL:
@@ -229,7 +229,6 @@ class MasterProblem:
                                                                 0]]
                                 table.append_row(self.row[i, j, k, s])
                         print(table)
-            # sub_model.model.write('fole.sol')
 
     def result(self):
         self.results.holding = 0
@@ -417,10 +416,10 @@ class TwoStage:
             (self.variables.p_ls[i, s] >= -self.parameters.pickup_time[i] - 20 + self.variables.ts[i, s] for i in
              p + d for s in S), name='late-penalty')
 
-        m.write('TwoSP.lp')
+        m.write('./Reports/TwoSP.lp')
 
     def printsol(self):
-        self.MP.printsol(self)
+        self.MP.printsol()
 
     def optimize(self):
         def test(model, where):

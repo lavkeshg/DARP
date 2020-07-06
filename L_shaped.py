@@ -76,21 +76,19 @@ class MasterProblem:
                 #                              abs(self.data.benders_gap * self.lowerbounds[-1]) or self.iters == 0):
                 x_sol = model.cbGetSolution(self.variables.x)
                 h_sol = model.cbGetSolution(self.variables.h)
-                pe_sol = model.cbGetSolution(self.variables.p_e)
+                # pe_sol = model.cbGetSolution(self.variables.p_e)
                 pl_sol = model.cbGetSolution(self.variables.p_l)
-                sol = [x_sol, h_sol, pe_sol, pl_sol]
+                sol = [x_sol, h_sol, pl_sol]
                 th_sol = model.cbGetSolution(self.variables.th)
                 if x_sol in self.solutions:
                     return True
                 [self.submodel[s].fix_values(sol=sol) for s in range(self.scenarios)]
                 if x_sol not in self.solutionsLP:
                     [self.submodel[s].relax() for s in range(self.scenarios)]
-                    z_subLP = sum(
-                        self.scenarioprob[s] * self.submodel[s].relaxmod.ObjVal for s in range(self.scenarios))
+                    z_subLP = sum(self.scenarioprob[s] * self.submodel[s].relaxmod.ObjVal for s in range(self.scenarios))
                     self.solutionsLP.append(x_sol)
                     if z_subLP > th_sol:
                         self.add_sub_cuts(z_subLP, x_sol=x_sol)
-                        self.LazySub += 1
                         objVal = model.cbGet(GRB.Callback.MIPSOL_OBJ)
                         objBst = model.cbGet(GRB.Callback.MIPSOL_OBJBST)
                         self.update_bounds(z_subLP, th_sol=th_sol, objVal=objVal, objBst=objBst)
@@ -99,43 +97,43 @@ class MasterProblem:
                         # print('Sub-Gradient cut NOT installed')
                         pass
 
-                try:
-                    [self.submodel[s].optimize() for s in range(self.scenarios)]
-                    z_sub = sum(self.scenarioprob[s] * self.submodel[s].model.ObjVal for s in range(self.scenarios))
-                    self.solutions.append(x_sol)
-                    if z_sub > th_sol:
-                        self.LazyInt += 1
-                        model.cbLazy((z_sub - self.subobjBst) *
-                                     (quicksum(self.variables.x[i, j, k] for i, j, k in x_sol.keys() if
-                                               x_sol[i, j, k] >= 0.5) -
-                                      quicksum(self.variables.x[i, j, k] for i, j, k in x_sol.keys() if
-                                               x_sol[i, j, k] < 0.5) -
-                                      len(x_sol)) + z_sub <= self.variables.th)
-                        objVal = model.cbGet(GRB.Callback.MIPSOL_OBJ)
-                        objBst = model.cbGet(GRB.Callback.MIPSOL_OBJBST)
-                        self.update_bounds(z_sub, th_sol=th_sol, objVal=objVal, objBst=objBst)
-                        # print('Integrality cut installed')
-                    else:
-                        # print('Integrality cut NOT installed')
-                        pass
-                except AttributeError:
-                    self.infeasol.append(sol)
-
-                self.iters += 1
+                # try:
+                [self.submodel[s].optimize() for s in range(self.scenarios)]
+                z_sub = sum(self.scenarioprob[s] * self.submodel[s].model.ObjVal for s in range(self.scenarios))
+                self.solutions.append(x_sol)
+                if z_sub > th_sol:
+                    self.LazyInt += 1
+                    model.cbLazy((z_sub - self.subobjBst) *
+                                 (quicksum(self.variables.x[i, j, k] for i, j, k in x_sol.keys() if
+                                           x_sol[i, j, k] >= 0.5) -
+                                  quicksum(self.variables.x[i, j, k] for i, j, k in x_sol.keys() if
+                                           x_sol[i, j, k] < 0.5) -
+                                  sum(x_sol.values())) + z_sub <= self.variables.th)
+                    objVal = model.cbGet(GRB.Callback.MIPSOL_OBJ)
+                    objBst = model.cbGet(GRB.Callback.MIPSOL_OBJBST)
+                    self.update_bounds(z_sub, th_sol=th_sol, objVal=objVal, objBst=objBst)
+                #     print('Integrality cut installed')
+                # else:
+                #     print('Integrality cut NOT installed')
+                # except AttributeError:
+                #     self.infeasol.append(sol)
+                return True
 
         self.model.Params.OutputFlag = 1
         self.model.optimize(OptCutFun)
         [self.submodel[s].fix_values() for s in range(self.scenarios)]
         [self.submodel[s].optimize() for s in range(self.scenarios)]
         z_sub = sum(self.scenarioprob[s] * self.submodel[s].model.ObjVal for s in range(self.scenarios))
-        self.update_bounds(z_sub)
+        # self.update_bounds(z_sub)
         print('Apprx = %f' % self.variables.th.X)
         print('ObjVal = %f' % z_sub)
+        print(self.LazyInt, " Integrality Cuts integrated into the model")
+        print(self.LazySub, " Sub-Gradient Cuts integrated into the model")
 
     def setLowerBound(self):
         seed = list(range(self.seeder, self.seeder + self.scenarios))
         self.submodel = {s: SubProblem(self, seed[s]) for s in range(self.scenarios)}
-        [self.submodel[s].optimize() for s in range(self.scenarios)]
+        # [self.submodel[s].optimize() for s in range(self.scenarios)]
         # self.subobjBst = sum(self.scenarioprob[s] * self.submodel[s].model.ObjVal for s in range(self.scenarios))
         self.subobjBst = -GRB.INFINITY
         [self.submodel[s].Fixfirststage() for s in range(self.scenarios)]
@@ -143,8 +141,6 @@ class MasterProblem:
     def _Benders_init(self):
         self.data.ub = GRB.INFINITY
         self.data.lb = -GRB.INFINITY
-        z_sub = {}
-        sens = {}
         self.constraints.cuts = {}
         self.cutlist = []
         self.upperbounds = []
@@ -158,7 +154,6 @@ class MasterProblem:
         [self.submodel[i].relax() for i in range(self.scenarios)]
         z_sub = sum(self.scenarioprob[s] * self.submodel[s].relaxmod.ObjVal for s in range(self.scenarios))
         self.update_bounds(z_sub)
-        print(self.variables.th.X, z_sub)
         while (abs(self.data.ub - self.data.lb) > abs(self.data.benders_gap * self.data.lb)) \
                 and (len(self.cutlist) < self.maxiters):
             if z_sub > self.variables.th.X:
@@ -174,8 +169,8 @@ class MasterProblem:
     def setMIP(self):
         for i, j, k in self.variables.x.keys():
             self.variables.x[i, j, k].vtype = 'B'
-        for i in self.parameters.nodes:
-            self.variables.r[i].vtype = 'B'
+        # for i in self.parameters.nodes:
+        #     self.variables.r[i].vtype = 'B'
 
     def __ClassProb__(self):
         if len(self.ClassProb) != 4:
@@ -185,7 +180,7 @@ class MasterProblem:
 
     def _parameters(self):
         self.parameters.BigM = 1e3
-        self.parameters.service_time = 5
+        self.parameters.service_time = 10
         self.parameters.capacity = 3
         self.parameters.ridetime = 60
         self.parameters.distance = self.mapObject.distance
@@ -210,12 +205,16 @@ class MasterProblem:
                                      obj={(i, j, k): self.parameters.distance[i, j] for i, j in
                                           self.parameters.distance.keys()
                                           for k in range(self.bus)}, name='x')
-        self.variables.p_e = m.addVars(self.parameters.pickup + self.parameters.dropoff,
-                                       vtype=GRB.CONTINUOUS, lb=0, obj=1, name='p_e')
-        self.variables.p_l = m.addVars(self.parameters.pickup + self.parameters.dropoff,
+        # self.variables.p_e = m.addVars(self.parameters.pickup
+        #                                + self.parameters.dropoff,
+        #                                vtype=GRB.CONTINUOUS, lb=0, obj=1, name='p_e')
+        self.variables.p_l = m.addVars(self.parameters.pickup,
+                                       #+ self.parameters.dropoff,
                                        vtype=GRB.CONTINUOUS, lb=0, obj=1, name='p_l')
         self.variables.t = m.addVars(self.parameters.pickup + self.parameters.dropoff,
-                                     vtype=GRB.CONTINUOUS, lb=0, obj=0, name='t')
+                                     vtype=GRB.CONTINUOUS,
+                                     lb={i: j - 5 for i,j in self.parameters.pickup_time.items()},
+                                     obj=0, name='t')
         self.variables.td = m.addVars(self.mapObject.depot(), list(range(self.bus)),
                                       vtype=GRB.CONTINUOUS, lb=0, obj=0, name='t')
         self.variables.w = m.addVars(self.parameters.nodes, lb=0, ub=self.parameters.capacity, vtype=GRB.CONTINUOUS,
@@ -223,7 +222,7 @@ class MasterProblem:
         self.variables.h = m.addVars(self.parameters.edges, vtype=GRB.CONTINUOUS, obj=1, name='h')
         self.variables.th = m.addVar(vtype=GRB.CONTINUOUS, lb=-1e4,
                                      ub=GRB.INFINITY, obj=1, name='value-func')
-        self.variables.r = m.addVars(self.parameters.nodes, lb=0, obj=1, vtype=GRB.CONTINUOUS, name='D-Var')
+        # self.variables.r = m.addVars(self.parameters.nodes, lb=0, obj=1, vtype=GRB.CONTINUOUS, name='D-Var')
 
         m.update()
 
@@ -291,8 +290,7 @@ class MasterProblem:
                       p + d), name='late-penalty')
         m.addConstrs((self.variables.w[i] + self.parameters.load[j] <= self.variables.w[j] +
                       (1 - self.variables.x[i, j, k]) * self.parameters.capacity for i, j in self.parameters.edges for k
-                      in
-                      b), name='load-balance')
+                      in b), name='load-balance')
         m.addConstrs(self.variables.x[0, self.last, k] == 0 for k in b)
         m.addConstrs(
             (self.variables.x[i, j, k] + self.variables.x[j, i, k] <= 1 for i in p + d for j in p + d for k in b
@@ -403,6 +401,7 @@ class MasterProblem:
                                       for i, j, k in self.variables.x.keys())
                      - sum(sens[i, j, k] * x_sol[i, j, k]
                            for i, j, k in self.variables.x.keys()) <= self.variables.th)
+        self.LazySub += 1
 
     def update_bounds(self, z_sub, th_sol=None, objVal=None, objBst=None):
         theta = self.variables.th.X if th_sol is None else th_sol
@@ -494,19 +493,21 @@ class SubProblem:
                                       vtype=GRB.BINARY, obj={(i, j, k): self.parameters.distance[i, j] for i, j in
                                                              self.parameters.distance.keys()
                                                              for k in b}, name='x')
-        self.variables.p_es = m.addVars(p + d, vtype=GRB.CONTINUOUS, lb=0, obj=1, name='p_e')
-        self.variables.p_ls = m.addVars(p + d, vtype=GRB.CONTINUOUS, lb=0, obj=1, name='p_l')
-        self.variables.ts = m.addVars(p + d, vtype=GRB.CONTINUOUS, lb=0, obj=0, name='t')
+        # self.variables.p_es = m.addVars(p + d, vtype=GRB.CONTINUOUS, lb=0, obj=1, name='p_e')
+        self.variables.p_ls = m.addVars(p, vtype=GRB.CONTINUOUS, lb=0, obj=1, name='p_l')
+        self.variables.ts = m.addVars(p + d, vtype=GRB.CONTINUOUS,
+                                      lb={i: j - 5 for i,j in self.parameters.pickup_time.items()},
+                                      obj=0, name='t')
         self.variables.tds = m.addVars(self.MP.mapObject.depot(), b,
                                        vtype=GRB.CONTINUOUS, lb=0, obj=0.0001, name='t')
-        self.variables.ws = m.addVars(self.parameters.nodes, lb=0, ub=self.parameters.capacity * 10,
-                                      vtype=GRB.CONTINUOUS, name='w')
+        # self.variables.ws = m.addVars(self.parameters.nodes, lb=0, ub=self.parameters.capacity * 10,
+        #                               vtype=GRB.CONTINUOUS, name='w')
         self.variables.hs = m.addVars(self.parameters.edges, vtype=GRB.CONTINUOUS, obj=1, name='h')
-        self.variables.rs = m.addVars(self.parameters.nodes, vtype=GRB.BINARY, obj=1, name='r')
+        # self.variables.rs = m.addVars(self.parameters.nodes, vtype=GRB.BINARY, obj=1, name='r')
         self.variables.fix_x = m.addVars(self.parameters.edges, b, vtype=GRB.BINARY, name='fix_x')
         self.variables.fix_h = m.addVars(self.parameters.edges, vtype=GRB.CONTINUOUS, name='fix_h')
-        self.variables.fix_p_e = m.addVars(p + d, vtype=GRB.CONTINUOUS, name='fix_p_e')
-        self.variables.fix_p_l = m.addVars(p + d, vtype=GRB.CONTINUOUS, name='fix_p_l')
+        # self.variables.fix_p_e = m.addVars(p + d, vtype=GRB.CONTINUOUS, name='fix_p_e')
+        self.variables.fix_p_l = m.addVars(p, vtype=GRB.CONTINUOUS, name='fix_p_l')
         m.update()
 
     def _setobjective(self):
@@ -541,7 +542,7 @@ class SubProblem:
         # If you get an infeasibility error look at these ^^^ constraints change it to >= from ==
 
         m.addConstrs(
-            (quicksum(al[j] * (self.variables.xs[i, j, k]) for j in self.parameters.nodes if i != j and j != 0) -
+            (quicksum(al[j] * (self.variables.xs[i, j, k]) for j in self.parameters.nodes if i != j and j != 0) +
              quicksum(al[j] * (self.variables.xs[j, i, k]) for j in self.parameters.nodes if i != j and j != self.last)
              >= 0 for i in p + d
              for k in b if al[i] == 1), name='flow_constraint')
@@ -605,9 +606,9 @@ class SubProblem:
         self.fixedconst_h = m.addConstrs(
             (self.variables.fix_h[i, j] == 0 for i, j in self.variables.fix_h.keys()), name='fix_h'
         )
-        self.fixedconst_p_e = m.addConstrs(
-            (self.variables.fix_p_e[i] == 0 for i in self.variables.fix_p_e.keys()), name='fix_p_e'
-        )
+        # self.fixedconst_p_e = m.addConstrs(
+        #     (self.variables.fix_p_e[i] == 0 for i in self.variables.fix_p_e.keys()), name='fix_p_e'
+        # )
         self.fixedconst_p_l = m.addConstrs(
             (self.variables.fix_p_l[i] == 0 for i in self.variables.fix_p_l.keys()), name='fix_p_l'
         )
@@ -630,11 +631,11 @@ class SubProblem:
                     round(m.variables.h[i, j].X, 4)
                 self.fixedconst_h[i, j].rhs = \
                     round(m.variables.h[i, j].X)
-            for i in self.fixedconst_p_e.keys():
-                self.relaxmod.getConstrByName('fix_p_e[{}]'.format(i)).rhs = \
-                    round(m.variables.p_e[i].X, 4)
-                self.fixedconst_p_e[i].rhs = \
-                    round(m.variables.p_e[i].X)
+            # for i in self.fixedconst_p_e.keys():
+            #     self.relaxmod.getConstrByName('fix_p_e[{}]'.format(i)).rhs = \
+            #         round(m.variables.p_e[i].X, 4)
+            #     self.fixedconst_p_e[i].rhs = \
+            #         round(m.variables.p_e[i].X)
             for i in self.fixedconst_p_l.keys():
                 self.relaxmod.getConstrByName('fix_p_l[{}]'.format(i)).rhs = \
                     round(m.variables.p_l[i].X, 4)
@@ -662,20 +663,20 @@ class SubProblem:
                 except KeyError:
                     self.relaxmod.getConstrByName('fix_h[{},{}]'.format(i, j)).rhs = 0
                     self.fixedconst_h[i, j].rhs = 0
-            try:
-                for i in self.fixedconst_p_e.keys():
-                    self.relaxmod.getConstrByName('fix_p_e[{}]'.format(i)).rhs = \
-                        round(sol[2][i], 4)
-                    self.fixedconst_p_e[i].rhs = \
-                        round(sol[2][i])
-            except KeyError:
-                for i in self.fixedconst_p_e.keys():
-                    self.relaxmod.getConstrByName('fix_p_e[{}]'.format(i)).rhs = 0
-                    self.fixedconst_p_e[i].rhs = 0
+            # try:
+            #     for i in self.fixedconst_p_e.keys():
+            #         self.relaxmod.getConstrByName('fix_p_e[{}]'.format(i)).rhs = \
+            #             round(sol[2][i], 4)
+            #         self.fixedconst_p_e[i].rhs = \
+            #             round(sol[2][i])
+            # except KeyError:
+            #     for i in self.fixedconst_p_e.keys():
+            #         self.relaxmod.getConstrByName('fix_p_e[{}]'.format(i)).rhs = 0
+            #         self.fixedconst_p_e[i].rhs = 0
             for i in self.fixedconst_p_l.keys():
                 self.relaxmod.getConstrByName('fix_p_l[{}]'.format(i)).rhs = \
-                    round(sol[3][i], 4)
+                    round(sol[2][i], 4)
                 self.fixedconst_p_l[i].rhs = \
-                    round(sol[3][i])
+                    round(sol[2][i])
         self.model.update()
         self.relaxmod.update()

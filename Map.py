@@ -7,7 +7,6 @@ class Rides:
         self.N_riders = N
         self.StartDay(start_time, service_time)
         self.pickup_time = self.pickup_time()
-        self.dropoff_time = self.dropoff_time()
 
     def StartDay(self, s, st):
         self.starttime = 0
@@ -45,11 +44,6 @@ class Rides:
         p = {i: self.starttime + self.servicetime * random.random() for i in self.pickup()}
         return p
 
-    def dropoff_time(self):
-        p = self.pickup_time
-        d = {i: p[i - self.N_riders] + 10 * random.random() for i in self.dropoff()}
-        return d
-
     def load(self):
         in_bus = {i: 1 for i in self.pickup()}
         out_bus = {i: -1 for i in self.dropoff()}
@@ -66,6 +60,7 @@ class Map(Rides):
         self.node = self.coordinates()
         self.distance = self.distance()
         self.run = self.time()
+        self.dropoff_time = self.dropoff_time()
 
     def _calculateDistance(self,x,y):
         x1,y1 = x
@@ -74,7 +69,7 @@ class Map(Rides):
         return round(dist)
 
     def coordinates(self):
-        n = {i: (random.random()*40, random.random()*40) for i in self.nodes()}
+        n = {i: (random.random()*10, random.random()*10) for i in self.nodes()}
         n[self.depot()[1]] = n[0]
         return n
 
@@ -84,5 +79,10 @@ class Map(Rides):
         return dist
 
     def time(self):
-        run = {(i, j): self.distance[i, j]/3 for i in self.nodes() for j in self.nodes()}
+        run = {(i, j): self.distance[i, j]*3 for i in self.nodes() for j in self.nodes()}
         return run
+
+    def dropoff_time(self):
+        p = self.pickup_time
+        d = {i: p[i - self.N_riders] + self.run[i - self.N_riders, i] * 1.5 for i in self.dropoff()}
+        return d
