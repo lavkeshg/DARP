@@ -15,7 +15,7 @@ class Tabu():
             'delta': 1
         }
 
-    def __init__(self, model, tabu_iterations=200, tabu_status=50, subset=5, rtoptm=20, roptiter=5, tsp=True):
+    def __init__(self, model, tabu_iterations=200, tabu_status=20, subset=5, rtoptm=5, roptiter=5, tsp=True, MIP=False):
         self.model = model
         self.bus = list(range(self.model.bus))
         self.N = self.model.parameters.rides
@@ -29,8 +29,8 @@ class Tabu():
         self.best = None
         self.bestcandidate = None
         self.pickup_time = self.model.parameters.pickup_time
-        self.early = {i: self.pickup_time[i] - 10 for i in self.pickup_time.keys()}
-        self.late = {i: self.pickup_time[i] + 10 for i in self.pickup_time.keys()}
+        self.early = {i: self.pickup_time[i] - 5 for i in self.pickup_time.keys()}
+        self.late = {i: self.pickup_time[i] + 5 for i in self.pickup_time.keys()}
         self.early.update({0: 480, self.model.last: 1440})
         self.late.update({0: 480, self.model.last: 1440})
         self.time = self.model.parameters.time
@@ -39,6 +39,7 @@ class Tabu():
         self.scenarios = list(range(self.model.scenarios))
         self.subset = min(subset, self.model.scenarios)
         self.bestlist = []
+        self.MIP = MIP
         self.penalty = math.sqrt(len(self.bus)*len(self.pickup))*10
         self._init_weights()
         if tsp:
@@ -46,6 +47,8 @@ class Tabu():
             self.model.setLowerBound()
 
     def tabuheuristic(self):
+        temp = 0
+        criteria = 0
         print('Building Initial Solution')
         self.bestcandidate = self.initialSolution()
         self.solutionEval(self.bestcandidate)
@@ -79,10 +82,23 @@ class Tabu():
                         self.best = sol
                     # print(itr)
             self.bestlist.append(self.best[max(self.bus)].head.value)
+            if temp != self.best[-2]:
+                criteria = 0
+            temp = self.best[-2]
+            criteria += 1
+            if criteria == self.tabu_status:
+                self.MIP = True
+                self.best[-1] = 0
+                self.solutionEval(self.best)
+                return self.best
+        self.MIP = True
+        self.best[-1] = 0
+        self.solutionEval(self.best)
         return self.best
 
     def routeoptimization(self):
-        sol = self.best
+        sol = {k: self.best[k].copy() for k in self.bus}
+        sol[-1] = 1e5
         prioritynodes = {k: PriorityQueue() for k in self.bus}
         opt = 0
         for k in self.bus:
@@ -155,6 +171,8 @@ class Tabu():
                     except KeyError:
                         self.tabudict.update({(i, k): [self.tabu_status, 1]})
                     for b in availbus:
+                        if b == k:
+                            continue
                         try:
                             if self.tabudict[i, b][0] == 0:
                                 node = ngbr[k][i]
@@ -263,17 +281,19 @@ class Tabu():
         for k in self.bus:
             schedule[k][0][3] += F[k]
         [compute(sol[k], k) for k in self.bus]
-        for k in sol.keys():
+        for k in self.bus:
             for i in range(len(sol[k])):
                 if sol[k][i] in self.pickup:
                     F = slack(sol[k][i:], k)
                     schedule[k][sol[k][i]][1] += F
+                    schedule[k][sol[k][i]][2] = schedule[k][sol[k][i]][1] - schedule[k][sol[k][i]][0]
                     schedule[k][sol[k][i]][3] = schedule[k][sol[k][i]][1] + srvc
                     compute(sol[k][i:], k)
         self.calculateObjective(solution, sol, schedule)
 
     def calculateObjective(self, solution, sol, schedule):
         cost = 0  # Distance cost of the route
+        # solution[-1] = 0
         xsol = [{}, {}, {}, {}]
         for k in sol.keys():
             dur = 0
@@ -282,7 +302,8 @@ class Tabu():
             for i in sol[k]:
                 if i != 0:
                     xsol[0].update({(prev, i, k): 1})
-                    xsol[1].update({(prev, i): schedule[k][i][2]})
+                    if schedule[k][i][4] != 0:
+                        xsol[1].update({(prev, i): schedule[k][i][2]})
                     xsol[3].update({i: max(0, schedule[k][i][1] - self.late[i])})
                 prev = i
                 if i == self.model.last:
@@ -308,7 +329,8 @@ class Tabu():
                         + self.weight['alpha'] * load \
                         + self.weight['beta'] * dur \
                         + self.weight['gamma'] * tmwndw \
-                        + self.weight['delta'] * ridetm
+                        + self.weight['delta'] * ridetm \
+                        + schedule[k][i][2]
                 if i != 0:
                     node.value = PriorityQueue()
                     [node.value.put(i) for i in ((-load, 'L'), (-tmwndw, 'T'), (-ridetm, 'R'))]
@@ -316,24 +338,45 @@ class Tabu():
                     node.time = schedule[k][0][3]
                     node.load = 0
         solution[-2] = cost
-        if self.tsp:
-            rdm.shuffle(self.scenarios)
-            S = self.scenarios[:self.subset]
+        rdm.shuffle(self.scenarios)
+        S = self.scenarios[:self.subset]
+        tsp = 0
+        if self.tsp and not self.MIP:
             [self.model.submodel[s].fix_values(self, sol=xsol) for s in S]
             # Optimize Relaxed 2nd Stage
             [self.model.submodel[s].relax() for s in S]
-            tsp = 0
             for s in S:
                 stat = self.model.submodel[s].relaxmod.status
                 if stat == 4 or stat == 3:
                     self.model.submodel[s].model.computeIIS()
-                    self.model.submodel[s].model.write('infeasible.ilp')
-                    self.model.submodel[s].model.write('infeasible.lp')
-                    exit(0)
+                    self.model.submodel[s].model.write('./Reports/infeasible.ilp')
+                    self.model.submodel[s].model.write('./Reports/infeasible.lp')
+                    # exit(0)
+                    print('Infeasible submodel in scenarios ',s)
                 elif stat == 2:
                     tsp += self.model.scenarioprob[s] * self.model.submodel[s].relaxmod.ObjVal
+                    # self.model.printsol(self.model.submodel)
+                    # exit()
                     # print(tsp)
                     # self.model.submodel[s].relaxmod.write('feasible.lp')
                     # self.model.submodel[s].relaxmod.write('feasible.sol')
+                    # self.model.submodel[S[0]].model.write('feasible.sol')
             cost += tsp
+            solution[-3] = tsp
+        elif self.tsp and self.MIP:
+            [self.model.submodel[s].fix_values(self, sol=xsol) for s in S]
+            # Optimize MIP 2nd Stage
+            [self.model.submodel[s].optimize() for s in S]
+            for s in S:
+                stat = self.model.submodel[s].model.status
+                if stat == 4 or stat == 3:
+                    self.model.submodel[s].model.computeIIS()
+                    self.model.submodel[s].model.write('./Reports/infeasible.ilp')
+                    self.model.submodel[s].model.write('./Reports/infeasible.lp')
+                    # exit(0)
+                    print('Infeasible submodel in scenario', s)
+                elif stat == 2:
+                    tsp += self.model.scenarioprob[s] * self.model.submodel[s].model.ObjVal
+            cost += tsp
+            solution[-3] = tsp
         solution[-1] += cost

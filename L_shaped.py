@@ -92,10 +92,6 @@ class MasterProblem:
                         objVal = model.cbGet(GRB.Callback.MIPSOL_OBJ)
                         objBst = model.cbGet(GRB.Callback.MIPSOL_OBJBST)
                         self.update_bounds(z_subLP, th_sol=th_sol, objVal=objVal, objBst=objBst)
-                        # print('Sub-Gradient cut installed')
-                    else:
-                        # print('Sub-Gradient cut NOT installed')
-                        pass
 
                 # try:
                 [self.submodel[s].optimize() for s in range(self.scenarios)]
@@ -249,27 +245,27 @@ class MasterProblem:
         m.addConstrs((
             # (self.variables.r[i] == 1) >>
             (self.variables.t[i] + self.parameters.time[i, j] + self.parameters.service_time + self.variables.h[i, j]
-             <= self.variables.t[j] + self.parameters.BigM * (2 - self.variables.x[i, j, k] - self.variables.r[i])) for
-        i in
-            p + d
+             <= self.variables.t[j] + self.parameters.BigM * (1 - self.variables.x[i, j, k]))\
+                                                                         # - self.variables.r[i]))
+            for i in p + d
             for j in p + d
             for k in b if i != j), name='hold-precedence-leq')
         m.addConstrs((
             # (self.variables.r[i] == 1) >>
             (self.variables.t[i] + self.parameters.time[i, j] + self.parameters.service_time + self.variables.h[i, j]
-             >= self.variables.t[j] - self.parameters.BigM * (2 - self.variables.x[i, j, k] - self.variables.r[i])) for
-        i in
-            p + d
+             >= self.variables.t[j] - self.parameters.BigM * (1 - self.variables.x[i, j, k]))\
+                                                              # - self.variables.r[i]))
+            for i in p + d
             for j in p + d
             for k in b if i != j), name='hold-precedence-geq')
-        m.addConstrs((
-            # (self.variables.r[i] == 0) >>
-            (self.variables.t[i] + self.parameters.time[i, j] + self.parameters.service_time
-             <= self.variables.t[j] + self.parameters.BigM * (1 - self.variables.x[i, j, k] + self.variables.r[i])) for
-        i in
-            p + d
-            for j in p + d
-            for k in b if i != j), name='precedence-leq')
+        # m.addConstrs((
+        #     # (self.variables.r[i] == 0) >>
+        #     (self.variables.t[i] + self.parameters.time[i, j] + self.parameters.service_time
+        #      <= self.variables.t[j] + self.parameters.BigM * (1 - self.variables.x[i, j, k] + self.variables.r[i])) for
+        # i in
+        #     p + d
+        #     for j in p + d
+        #     for k in b if i != j), name='precedence-leq')
         m.addConstrs((self.variables.td[0, k] + self.parameters.time[0, j] + self.variables.h[0, j] <=
                       self.variables.t[j] + self.parameters.BigM * (1 - self.variables.x[0, j, k]) for j in p + d
                       for k in b), name='start_time-leq')
@@ -284,10 +280,10 @@ class MasterProblem:
                       self.variables.h[i, self.last] >=
                       self.variables.td[self.last, k] + self.parameters.BigM * (self.variables.x[i, self.last, k] - 1)
                       for i in p + d for k in b), name='end_time-geq')
-        m.addConstrs((self.variables.p_e[i] >= self.parameters.pickup_time[i] - 10 - self.variables.t[i] for i in
-                      p + d), name='early-penalty')
-        m.addConstrs((self.variables.p_l[i] >= -self.parameters.pickup_time[i] - 10 + self.variables.t[i] for i in
-                      p + d), name='late-penalty')
+        # m.addConstrs((self.variables.p_e[i] >= self.parameters.pickup_time[i] - 5 - self.variables.t[i] for i in
+        #               p + d), name='early-penalty')
+        m.addConstrs((self.variables.p_l[i] >= -self.parameters.pickup_time[i] - 5 + self.variables.t[i] for i in
+                      p), name='late-penalty')
         m.addConstrs((self.variables.w[i] + self.parameters.load[j] <= self.variables.w[j] +
                       (1 - self.variables.x[i, j, k]) * self.parameters.capacity for i, j in self.parameters.edges for k
                       in b), name='load-balance')
@@ -295,9 +291,9 @@ class MasterProblem:
         m.addConstrs(
             (self.variables.x[i, j, k] + self.variables.x[j, i, k] <= 1 for i in p + d for j in p + d for k in b
              if i != j), name='forbidden')
-        m.addConstrs(
-            self.variables.w[i] <= self.parameters.capacity * self.variables.r[i] for i in self.parameters.nodes)
-        m.write('L-shaped-Master.lp')
+        # m.addConstrs(
+        #     self.variables.w[i] <= self.parameters.capacity * self.variables.r[i] for i in self.parameters.nodes)
+        m.write('./Reports/L-shaped-Master.lp')
 
     def printsol(self, sub_model=None):
         if self.model.status == GRB.OPTIMAL:
@@ -513,12 +509,18 @@ class SubProblem:
     def _setobjective(self):
         m = self.model
         m.setObjective(
-            (quicksum(self.parameters.distance[i, j] * (self.variables.xs[i, j, k] - self.variables.fix_x[i, j, k]) +
-                      (self.variables.hs[i, j] - self.variables.fix_h[i, j])
-                      for i, j in self.parameters.edges for k in range(self.MP.bus))
-             + quicksum((self.variables.p_es[i] - self.variables.fix_p_e[i])
-                        + (self.variables.p_ls[i] - self.variables.fix_p_l[i])
-                        for i in self.parameters.pickup + self.parameters.dropoff))
+            (quicksum(
+                self.parameters.distance[i, j] * (self.variables.xs[i, j, k] - self.variables.fix_x[i, j, k])
+                      for i, j in self.parameters.edges for k in range(self.MP.bus)
+            ) +
+            quicksum(
+                        (self.variables.hs[i, j] - self.variables.fix_h[i, j]) for i,j in self.parameters.edges
+            ) +
+            quicksum(
+                        # (self.variables.p_es[i] - self.variables.fix_p_e[i]) +
+                        (self.variables.p_ls[i] - self.variables.fix_p_l[i])
+                        for i in self.parameters.pickup)
+            )
         )
 
     def _constraints(self):
@@ -531,20 +533,23 @@ class SubProblem:
         bt = self.sim.beta
         ga = self.sim.gamma
         m.addConstrs((self.variables.xs.sum(i, '*', k) + self.variables.xs.sum('*', i, k) == 0
-                      for i in p + d for k in b if al[i] <= 0), name='Inactive-node')
-        m.addConstrs((self.variables.fix_x[i, j, k] <= self.variables.xs[i, j, k]
+                      for i in p + d for k in b if al[i] == 0), name='Inactive-node')
+        m.addConstrs((self.variables.fix_x[i, j, k]*0.3 <= self.variables.xs[i, j, k]
                       for i, j in self.parameters.edges for k in b if al[i] == 1 and al[j] == 1),
                      name='DnP-recourse')
+        # m.addConstrs(((self.variables.fix_x[i, j, k] == 1) >> (self.variables.xs[i, j, k] == 1)
+        #               for i, j in self.parameters.edges for k in b if al[i] == 1 and al[j] == 1),
+        #              name='DnP-recourse')
         m.addConstrs(quicksum(self.variables.xs[0, j, k] * al[j] for j in p + d)
-                     + self.variables.xs[0, self.last, k] >= 1 for k in b)
+                     + self.variables.xs[0, self.last, k] == 1 for k in b)
         m.addConstrs(quicksum(self.variables.xs[j, self.last, k] * al[j] for j in p + d)
-                     + self.variables.xs[0, self.last, k] >= 1 for k in b)
+                     + self.variables.xs[0, self.last, k] == 1 for k in b)
         # If you get an infeasibility error look at these ^^^ constraints change it to >= from ==
 
         m.addConstrs(
             (quicksum(al[j] * (self.variables.xs[i, j, k]) for j in self.parameters.nodes if i != j and j != 0) +
              quicksum(al[j] * (self.variables.xs[j, i, k]) for j in self.parameters.nodes if i != j and j != self.last)
-             >= 0 for i in p + d
+             <= 2 for i in p + d
              for k in b if al[i] == 1), name='flow_constraint')
         m.addConstrs(
             (quicksum((self.variables.xs[i + n, j, k]) for j in self.parameters.nodes if i + n != j and j != 0) -
@@ -552,21 +557,23 @@ class SubProblem:
                       >= 0 for i in p for k in b if al[i + n] == 1), name='pick-drop')
         m.addConstrs((self.variables.ts[i] + self.parameters.time[i, j] + bt[i] * self.parameters.service_time
                       + ga[i] * self.parameters.wait_time + self.variables.hs[i, j]
-                      <= self.variables.ts[j] - self.parameters.BigM *
-                      (self.variables.rs[i] + self.variables.xs[i, j, k] - 2) for i in
+                      <= self.variables.ts[j] - self.parameters.BigM *\
+                      # (self.variables.rs[i] +
+                      (self.variables.xs[i, j, k] - 1) for i in
                       p + d for j in p + d
                       for k in b if i != j and al[i] == 1 and al[j] == 1), name='hold-precedence-leq')
         m.addConstrs((self.variables.ts[i] + self.parameters.time[i, j] + bt[i] * self.parameters.service_time
                       + ga[i] * self.parameters.wait_time + self.variables.hs[i, j]
-                      >= self.variables.ts[j] + self.parameters.BigM *
-                      (self.variables.rs[i] + self.variables.xs[i, j, k] - 2) for i in
+                      >= self.variables.ts[j] + self.parameters.BigM *\
+                      # (self.variables.rs[i]\
+                      (self.variables.xs[i, j, k] - 1) for i in
                       p + d for j in p + d
                       for k in b if i != j and al[i] == 1 and al[j] == 1), name='hold-precedence-geq')
-        m.addConstrs(((self.variables.ts[i] + self.parameters.time[i, j] + bt[i] * self.parameters.service_time
-                       + ga[i] * self.parameters.wait_time
-                       <= self.variables.ts[j] - self.parameters.BigM * (self.variables.xs[i, j, k] - 1)) for i in
-                      p + d for j in p + d
-                      for k in b if i != j and al[i] == 1 and al[j] == 1), name='precedence-leq')
+        # m.addConstrs(((self.variables.ts[i] + self.parameters.time[i, j] + bt[i] * self.parameters.service_time
+        #                + ga[i] * self.parameters.wait_time
+        #                <= self.variables.ts[j] - self.parameters.BigM * (self.variables.xs[i, j, k] - 1)) for i in
+        #               p + d for j in p + d
+        #               for k in b if i != j and al[i] == 1 and al[j] == 1), name='precedence-leq')
         m.addConstrs((self.variables.tds[0, k] + self.parameters.time[0, j] + self.variables.hs[0, j] <=
                       self.variables.ts[j] + self.parameters.BigM * (1 - self.variables.xs[0, j, k]) for j in p + d
                       for k in b if al[j] == 1), name='start_time-leq')
@@ -583,18 +590,19 @@ class SubProblem:
              + ga[i] * self.parameters.wait_time + self.variables.hs[i, self.last] >=
              self.variables.tds[self.last, k] + self.parameters.BigM * (self.variables.xs[i, self.last, k] - 1)
              for i in p + d for k in b if al[i] == 1), name='end_time-geq')
+        # m.addConstrs(
+        #     (self.variables.p_es[i] >= self.parameters.pickup_time[i] - 5 - self.variables.ts[i] for i in
+        #      p + d), name='early-penalty')
         m.addConstrs(
-            (self.variables.p_es[i] >= self.parameters.pickup_time[i] - 10 - self.variables.ts[i] for i in
-             p + d), name='early-penalty')
-        m.addConstrs(
-            (self.variables.p_ls[i] >= -self.parameters.pickup_time[i] - 10 + self.variables.ts[i] for i in
-             p + d), name='late-penalty')
-        m.addConstrs((self.variables.ws[i] + self.parameters.load[j] <= self.variables.ws[j] +
-                      (1 - self.variables.xs[i, j, k]) * self.parameters.BigM for i, j in self.parameters.edges for k in
-                      b if al[i] == 1 and al[j] == 1), name='load-balance')
-        m.addConstrs(
-            self.variables.ws[i] <= self.parameters.capacity * 10 * self.variables.rs[i] for i in self.parameters.nodes)
-        m.write('L-shaped-Sub.lp')
+            (self.variables.p_ls[i] >= -self.parameters.pickup_time[i] - 5 + self.variables.ts[i] for i in
+             p), name='late-penalty')
+        # m.addConstrs((self.variables.ws[i] + self.parameters.load[j] <= self.variables.ws[j] +
+        #               (1 - self.variables.xs[i, j, k]) * self.parameters.BigM for i, j in self.parameters.edges for k in
+        #               b if al[i] == 1 and al[j] == 1), name='load-balance')
+        # m.addConstr(self.variables.ws[self.MP.last] == 0)
+        # m.addConstrs(
+        #     self.variables.ws[i] <= self.parameters.capacity * self.variables.rs[i] for i in self.parameters.nodes)
+        m.write('./Reports/L-shaped-Sub.lp')
 
     def Fixfirststage(self):
         m = self.model
