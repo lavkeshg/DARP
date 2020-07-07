@@ -546,12 +546,10 @@ class SubProblem:
              quicksum(al[j] * (self.variables.xs[j, i, k]) for j in self.parameters.nodes if i != j and j != self.last)
              >= 0 for i in p + d
              for k in b if al[i] == 1), name='flow_constraint')
-        m.addConstrs((quicksum(
-            al[j] * (self.variables.xs[i + n, j, k]) for j in self.parameters.nodes if i + n != j and j != 0) -
-                      quicksum(al[j] * (self.variables.xs[j, i, k]) for j in self.parameters.nodes if
-                               i != j and j != self.last)
-                      >= 0 for i in p
-                      for k in b if al[i + n] == 1), name='pick-drop')
+        m.addConstrs(
+            (quicksum((self.variables.xs[i + n, j, k]) for j in self.parameters.nodes if i + n != j and j != 0) -
+            quicksum((self.variables.xs[j, i, k]) for j in self.parameters.nodes if i != j and j != self.last and al[j] == 1)
+                      >= 0 for i in p for k in b if al[i + n] == 1), name='pick-drop')
         m.addConstrs((self.variables.ts[i] + self.parameters.time[i, j] + bt[i] * self.parameters.service_time
                       + ga[i] * self.parameters.wait_time + self.variables.hs[i, j]
                       <= self.variables.ts[j] - self.parameters.BigM *
