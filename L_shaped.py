@@ -114,15 +114,14 @@ class MasterProblem:
                 # except AttributeError:
                 #     self.infeasol.append(sol)
                 return True
-
         self.model.Params.OutputFlag = 1
         self.model.optimize(OptCutFun)
-        [self.submodel[s].fix_values() for s in range(self.scenarios)]
-        [self.submodel[s].optimize() for s in range(self.scenarios)]
-        z_sub = sum(self.scenarioprob[s] * self.submodel[s].model.ObjVal for s in range(self.scenarios))
+        # [self.submodel[s].fix_values() for s in range(self.scenarios)]
+        # [self.submodel[s].optimize() for s in range(self.scenarios)]
+        # z_sub = sum(self.scenarioprob[s] * self.submodel[s].model.ObjVal for s in range(self.scenarios))
         # self.update_bounds(z_sub)
-        print('Apprx = %f' % self.variables.th.X)
-        print('ObjVal = %f' % z_sub)
+        print('Apprx = %f' % self.model.ObjVal)
+        print('ObjVal = %f' % self.upperbounds[-1])
         print(self.LazyInt, " Integrality Cuts integrated into the model")
         print(self.LazySub, " Sub-Gradient Cuts integrated into the model")
 
@@ -131,7 +130,7 @@ class MasterProblem:
         self.submodel = {s: SubProblem(self, seed[s]) for s in range(self.scenarios)}
         # [self.submodel[s].optimize() for s in range(self.scenarios)]
         # self.subobjBst = sum(self.scenarioprob[s] * self.submodel[s].model.ObjVal for s in range(self.scenarios))
-        self.subobjBst = -GRB.INFINITY
+        self.subobjBst = -1e3
         [self.submodel[s].Fixfirststage() for s in range(self.scenarios)]
 
     def _Benders_init(self):
@@ -520,10 +519,12 @@ class SubProblem:
              quicksum(al[j] * (self.variables.xs[j, i, k]) for j in self.parameters.nodes if i != j and j != self.last)
              == 0 for i in p + d
              for k in b if al[i] == 1), name='flow_constraint')
-        m.addConstrs(
-            (quicksum((self.variables.xs[i + n, j, k]) for j in self.parameters.nodes if i + n != j and j != 0) -
-            quicksum((self.variables.xs[j, i, k]) for j in self.parameters.nodes if i != j and j != self.last and al[j] == 1)
-                      == 0 for i in p for k in b if al[i + n] == 1), name='pick-drop')
+        # m.addConstrs(
+        #     (quicksum((self.variables.xs[i + n, j, k]) for j in self.parameters.nodes if i + n != j and j != 0) -
+        #     quicksum((self.variables.xs[j, i, k]) for j in self.parameters.nodes if i != j and j != self.last and al[j] == 1)
+        #               == 0 for i in p for k in b if al[i + n] == 1), name='pick-drop')
+        m.addConstrs((self.variables.ts[i] + self.parameters.time[i, i + n] <= self.variables.ts[i + n] for i in
+                      p), name='min-TOA')
         m.addConstrs((self.variables.ts[i] + self.parameters.time[i, j] + bt[i] * self.parameters.service_time
                       + ga[i] * self.parameters.wait_time + self.variables.hs[i, j]
                       <= self.variables.ts[j] - self.parameters.BigM *\

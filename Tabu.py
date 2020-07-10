@@ -15,7 +15,7 @@ class Tabu():
             'delta': 1
         }
 
-    def __init__(self, model, tabu_iterations=200, tabu_status=20, subset=5, rtoptm=5, roptiter=5, tsp=True, MIP=False):
+    def __init__(self, model, tabu_iterations=200, tabu_status=20, subset=5, rtoptm=5, roptiter=5, tsp=True, MIP=True):
         self.model = model
         self.bus = list(range(self.model.bus))
         self.N = self.model.parameters.rides
@@ -40,7 +40,7 @@ class Tabu():
         self.subset = min(subset, self.model.scenarios)
         self.bestlist = []
         self.MIP = MIP
-        self.penalty = math.sqrt(len(self.bus)*len(self.pickup))*10
+        self.penalty = math.sqrt(len(self.bus)*len(self.pickup))
         self._init_weights()
         if tsp:
             self.model.initialize()
@@ -75,7 +75,7 @@ class Tabu():
                             self.tabudict[i, k][0] = 0
                 for itr in range(min(self.roptiter,2*len(self.pickup))):
                     sol = self.routeoptimization()
-                    samesol = [self.best[k].list()==sol[k].list() for k in self.bus]
+                    samesol = [self.best[k].list() == sol[k].list() for k in self.bus]
                     if sum(samesol) != len(self.bus):
                         self.solutionEval(sol)
                     if sol[-1] < self.best[-1]:
@@ -294,7 +294,7 @@ class Tabu():
     def calculateObjective(self, solution, sol, schedule):
         cost = 0  # Distance cost of the route
         # solution[-1] = 0
-        xsol = [{}, {}, {}, {}]
+        xsol = [{}, {}, {}]
         for k in sol.keys():
             dur = 0
             tmwndw = 0
@@ -304,7 +304,7 @@ class Tabu():
                     xsol[0].update({(prev, i, k): 1})
                     if schedule[k][i][4] != 0:
                         xsol[1].update({(prev, i): schedule[k][i][2]})
-                    xsol[3].update({i: max(0, schedule[k][i][1] - self.late[i])})
+                    xsol[2].update({i: max(0, schedule[k][i][1] - self.late[i])})
                 prev = i
                 if i == self.model.last:
                     solution[k][i].load = 0
@@ -352,7 +352,7 @@ class Tabu():
                     self.model.submodel[s].model.write('./Reports/infeasible.ilp')
                     self.model.submodel[s].model.write('./Reports/infeasible.lp')
                     # exit(0)
-                    print('Infeasible submodel in scenarios ',s)
+                    print('Infeasible submodel in scenarios ', s)
                 elif stat == 2:
                     tsp += self.model.scenarioprob[s] * self.model.submodel[s].relaxmod.ObjVal
                     # self.model.printsol(self.model.submodel)

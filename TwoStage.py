@@ -62,7 +62,8 @@ class MasterProblem:
         self.parameters.pickup_time.update(self.parameters.dropoff_time)
         self.parameters.nodes = self.mapObject.nodes()
         self.parameters.rides = self.mapObject.N_riders
-        self.parameters.edges = {(i, j) for i, j in self.parameters.distance.keys() if j != 0 and i != self.last and i != j}
+        self.parameters.edges = {(i, j) for i, j in self.parameters.distance.keys()\
+                                 if i != self.last and j != 0 and i != j}
 
     def _variables(self):
         m = self.model
@@ -75,10 +76,10 @@ class MasterProblem:
                                           for k in range(self.bus)}, name='x')
         # self.variables.p_e = m.addVars(self.parameters.pickup + self.parameters.dropoff,
         #                                vtype=GRB.CONTINUOUS, lb=0, obj=1, name='p_e')
-        self.variables.p_l = m.addVars(self.parameters.pickup + self.parameters.dropoff,
-                                       vtype=GRB.CONTINUOUS, lb=0, obj=1, name='p_l')
+        self.variables.p_l = m.addVars(self.parameters.pickup, vtype=GRB.CONTINUOUS, lb=0, obj=1, name='p_l')
         self.variables.t = m.addVars(self.parameters.pickup + self.parameters.dropoff,
-                                     vtype=GRB.CONTINUOUS, lb=0, obj=0, name='t')
+                                     vtype=GRB.CONTINUOUS, lb={i: j - 5 for i, j in self.parameters.pickup_time.items()},
+                                     obj=0, name='t')
         self.variables.td = m.addVars(self.mapObject.depot(), list(range(self.bus)),
                                       vtype=GRB.CONTINUOUS, lb=0, obj=0, name='t')
         self.variables.w = m.addVars(self.parameters.nodes, lb=0, ub=self.parameters.capacity, vtype=GRB.CONTINUOUS,
@@ -140,8 +141,8 @@ class MasterProblem:
                       for i in d for k in b), name='end_time-geq')
         # m.addConstrs((self.variables.p_e[i] >= self.parameters.pickup_time[i] - 10 - self.variables.t[i] for i in
         #               p + d), name='early-penalty')
-        m.addConstrs((self.variables.p_l[i] >= -self.parameters.pickup_time[i] - 10 + self.variables.t[i] for i in
-                      p + d), name='late-penalty')
+        m.addConstrs((self.variables.p_l[i] >= -self.parameters.pickup_time[i] - 5 + self.variables.t[i] for i in
+                      p), name='late-penalty')
         # ###Cite paper-15 for following tighter constraints
         m.addConstrs((self.variables.w[i] + self.parameters.load[j] <= self.variables.w[j] +
                       (1 - self.variables.x[i, j, k]) * self.parameters.BigM for i, j in self.parameters.edges for k in
@@ -172,7 +173,7 @@ class MasterProblem:
                 print(table)
             if sub_model is not None:
                 for s in sub_model.parameters.xi:
-                    for k in range(sub_model.parameters.bus):
+                    for k in range(sub_model.bus):
                         print('Scenario %g Routing for bus %g' % (s + 1, k + 1))
                         table = BeautifulTable()
                         table.column_headers = self.head
@@ -317,18 +318,20 @@ class TwoStage:
         p = self.parameters.pickup
         d = self.parameters.dropoff
         b = list(range(self.MP.bus))
+        for s in S:
+            early_arr = {(i, s): j - 5 for i, j in self.parameters.pickup_time.items()}
 
         self.variables.xs = m.addVars(self.parameters.edges, b, S,
                                       vtype=GRB.BINARY, obj={(i, j, k, s): self.parameters.distance[i, j]/xi for i, j in
                                                              self.parameters.distance.keys()
                                                              for k in b for s in S}, name='x')
-        self.variables.p_es = m.addVars(p + d, S, vtype=GRB.CONTINUOUS, lb=0, obj=1/xi, name='p_e')
-        self.variables.p_ls = m.addVars(p + d, S, vtype=GRB.CONTINUOUS, lb=0, obj=1/xi, name='p_l')
-        self.variables.ts = m.addVars(p + d, S, vtype=GRB.CONTINUOUS, lb=0, obj=0, name='t')
+        # self.variables.p_es = m.addVars(p + d, S, vtype=GRB.CONTINUOUS, lb=0, obj=1/xi, name='p_e')
+        self.variables.p_ls = m.addVars(p, S, vtype=GRB.CONTINUOUS, lb=0, obj=1/xi, name='p_l')
+        self.variables.ts = m.addVars(p + d, S, vtype=GRB.CONTINUOUS, lb=early_arr, obj=0, name='t')
         self.variables.tds = m.addVars(self.MP.mapObject.depot(), b, S,
                                        vtype=GRB.CONTINUOUS, lb=0, obj=0.0001, name='t')
-        self.variables.ws = m.addVars(self.parameters.nodes, S, lb=0, ub=self.parameters.capacity,
-                                      vtype=GRB.CONTINUOUS, name='w')
+        # self.variables.ws = m.addVars(self.parameters.nodes, S, lb=0, ub=self.parameters.capacity,
+        #                               vtype=GRB.CONTINUOUS, name='w')
         self.variables.hs = m.addVars(self.parameters.edges, S, vtype=GRB.CONTINUOUS, obj=1/xi, name='h')
         m.update()
 
@@ -340,18 +343,15 @@ class TwoStage:
                      + self.MP.variables.h[i, j]
                      # * self.MP.variables.w[i]
                      for i, j in self.parameters.edges for k in range(self.MP.bus)) +
-            quicksum(self.MP.variables.p_e[i] + self.MP.variables.p_l[i] for i in self.parameters.pickup +
-                     self.parameters.dropoff) +
+            quicksum(self.MP.variables.p_l[i] for i in self.parameters.pickup) +
             # Sub-problem
             (1 / self.scenarios) * (quicksum(self.parameters.distance[i, j] * (self.variables.xs[i, j, k, s] -
                                                                                self.MP.variables.x[i, j, k])
                                              + (self.variables.hs[i, j, s] - self.MP.variables.h[i, j])
                                              for i, j in self.parameters.edges
                                              for k in range(self.MP.bus) for s in self.parameters.xi) +
-                                    quicksum((self.variables.p_es[i, s] - self.MP.variables.p_e[i])
-                                             + (self.variables.p_ls[i, s] - self.MP.variables.p_l[i])
-                                             for i in self.parameters.pickup + self.parameters.dropoff
-                                             for s in self.parameters.xi))
+                                    quicksum((self.variables.p_ls[i, s] - self.MP.variables.p_l[i])
+                                             for i in self.parameters.pickup for s in self.parameters.xi))
         )
 
     def _constraints(self):
@@ -366,20 +366,18 @@ class TwoStage:
         ga = self.sim.gamma
         m.addConstrs((self.variables.xs.sum(i, '*', k, s) + self.variables.xs.sum('*', i, k, s) == 0
                       for i in p + d for k in b for s in S if al[i, s] == 0), name='Inactive-node')
-        # m.addConstrs((-self.parameters.BigM * (1 - al[i, s] * al[j, s]) + self.MP.variables.x[i, j, k] <=
-        #               self.variables.xs[i, j, k, s]
-        #               for i, j in self.parameters.edges for k in b for s in S if i != 0),
-        #              name='DnP-recourse')
-
-        m.addConstrs(quicksum(self.variables.xs[0, j, k, s]*al[j, s] - self.MP.variables.x[0, j, k] for j in p + d)
-                     + self.variables.xs[0, self.last, k, s] == 0 for k in b
-                     for s in S)
-        m.addConstrs((quicksum(self.variables.xs.sum(i, j, k, s) * al[j, s] - self.MP.variables.x.sum(i, j, k)
-                               for j in self.parameters.nodes) == 0 for i in p +
-                      d for k in b for s in S if al[i, s] == 1), name='flow-constraint-recourse_in')
-        m.addConstrs((quicksum(self.MP.variables.x.sum(j, i, k) - self.variables.xs.sum(j, i, k, s) * al[j, s]
-                               for j in self.parameters.nodes) == 0 for i in p +
-                      d for k in b for s in S if al[i, s] == 1), name='flow-constraint-recourse_out')
+        m.addConstrs((self.MP.variables.x[i, j, k] <= self.variables.xs[i, j, k, s]
+                      for i, j in self.parameters.edges for k in b for s in S if al[i, s] == 1 and al[j, s] == 1),
+                     name='DnP-recourse')
+        m.addConstrs(quicksum(self.variables.xs[0, j, k, s] * al[j, s] for j in p + d)
+                     + self.variables.xs[0, self.last, k, s] == 1 for k in b for s in S)
+        m.addConstrs(quicksum(self.variables.xs[j, self.last, k, s] * al[j, s] for j in p + d)
+                     + self.variables.xs[0, self.last, k, s] == 1 for k in b for s in S)
+        m.addConstrs(
+            (quicksum(al[j, s] * (self.variables.xs[i, j, k, s]) for j in self.parameters.nodes if i != j and j != 0) -
+             quicksum(al[j, s] * (self.variables.xs[j, i, k, s]) for j in self.parameters.nodes if i != j and j != self.last)
+             == 0 for i in p + d
+             for k in b for s in S if al[i, s] == 1), name='flow_constraint')
         m.addConstrs((self.variables.ts[i, s] + self.parameters.time[i, i + n] <= self.variables.ts[i + n, s] for i in
                       p for s in S), name='min-TOA')
         m.addConstrs((self.variables.ts[i, s] + self.parameters.time[i, j] + bt[i, s] * self.parameters.service_time
@@ -413,8 +411,8 @@ class TwoStage:
         #     (self.variables.p_es[i, s] >= self.parameters.pickup_time[i] - 20 - self.variables.ts[i, s] for i in
         #      p + d for s in S), name='early-penalty')
         m.addConstrs(
-            (self.variables.p_ls[i, s] >= -self.parameters.pickup_time[i] - 20 + self.variables.ts[i, s] for i in
-             p + d for s in S), name='late-penalty')
+            (self.variables.p_ls[i, s] >= -self.parameters.pickup_time[i] - 5 + self.variables.ts[i, s] for i in
+             p for s in S), name='late-penalty')
 
         m.write('./Reports/TwoSP.lp')
 
