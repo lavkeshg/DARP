@@ -42,6 +42,7 @@ class Tabu():
         self.MIP = MIP
         self.penalty = math.sqrt(len(self.bus)*len(self.pickup))
         self._init_weights()
+        self.scenarioprob = {i: 1 / self.subset for i in self.scenarios}
         if tsp:
             self.model.initialize()
             self.model.setLowerBound()
@@ -65,7 +66,7 @@ class Tabu():
             for candidate in ngbr:
                 if candidate[-1] < self.bestcandidate[-1]:
                     self.bestcandidate = candidate
-            print(self.bestcandidate[-1],self.best[-1])
+            print(self.bestcandidate[-1], self.best[-1])
             if self.bestcandidate[-1] < self.best[-1] or iter % self.rtoptm == 0:
                 if self.bestcandidate[-1] < self.best[-1]:
                     self.best = self.bestcandidate
@@ -73,7 +74,7 @@ class Tabu():
                     for i in self.best[k]:
                         if i in self.pickup:
                             self.tabudict[i, k][0] = 0
-                for itr in range(min(self.roptiter,2*len(self.pickup))):
+                for itr in range(min(self.roptiter, 2*len(self.pickup))):
                     sol = self.routeoptimization()
                     samesol = [self.best[k].list() == sol[k].list() for k in self.bus]
                     if sum(samesol) != len(self.bus):
@@ -354,7 +355,7 @@ class Tabu():
                     # exit(0)
                     print('Infeasible submodel in scenarios ', s)
                 elif stat == 2:
-                    tsp += self.model.scenarioprob[s] * self.model.submodel[s].relaxmod.ObjVal
+                    tsp += self.scenarioprob[s] * self.model.submodel[s].relaxmod.ObjVal
                     # self.model.printsol(self.model.submodel)
                     # exit()
                     # print(tsp)
@@ -376,7 +377,7 @@ class Tabu():
                     # exit(0)
                     print('Infeasible submodel in scenario', s)
                 elif stat == 2:
-                    tsp += self.model.scenarioprob[s] * self.model.submodel[s].model.ObjVal
+                    tsp += self.scenarioprob[s] * self.model.submodel[s].model.ObjVal
             cost += tsp
             solution[-3] = tsp
         solution[-1] += cost
