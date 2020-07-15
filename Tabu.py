@@ -80,15 +80,17 @@ class Tabu():
                         else:
                             self.best[k] = self.bestcandidate[k]
 
-                for k in self.bus:
-                    for i in self.best[k]:
-                        if i in self.pickup:
-                            self.tabudict[i, k][0] = 0
+                # for k in self.bus:
+                #     for i in self.best[k]:
+                #         if i in self.pickup:
+                #             self.tabudict[i, k][0] = 0
                 for itr in range(min(self.roptiter, 2*len(self.pickup))):
                     sol = self.routeoptimization()
-                    samesol = [self.best[k].list() == sol[k].list() for k in self.bus]
-                    if sum(samesol) != len(self.bus):
-                        self.solutionEval(sol)
+                    # samesol = [self.best[k].list() == sol[k].list() for k in self.bus]
+                    # if sum(samesol) != len(self.bus):
+                    #     self.solutionEval(sol)
+                    if sol is None:
+                        break
                     if sol[-1] < self.best[-1]:
                         self.best = sol
                         print(itr)
@@ -109,7 +111,7 @@ class Tabu():
 
     def routeoptimization(self):
         sol = {k: self.best[k].copy() for k in self.bus}
-        sol[-1] = 1e5
+        sol[-1] = 0
         prioritynodes = {k: PriorityQueue() for k in self.bus}
         opt = 0
         for k in self.bus:
@@ -121,7 +123,7 @@ class Tabu():
             if prioritynodes[k].empty():
                 opt += 1
             if opt == len(self.bus):
-                return sol
+                return None
         for k in self.bus:
             while not prioritynodes[k].empty():
                 sl = sol[k].copy()
@@ -153,7 +155,7 @@ class Tabu():
                 if pnode in sl.list():
                     sol[k] = sl
                     self.solutionEval(sol)
-        return sol
+        return sol if sol[-1] != 0 else self.best
 
     def initialSolution(self):
         solution = {i: LinkedList() for i in self.bus}
