@@ -1,6 +1,6 @@
 import random
 import math
-
+random.seed(200)
 class Rides:
 
     def __init__(self, N, start_time='8:00', service_time='6:00'):
