@@ -15,7 +15,7 @@ class Tabu():
             'delta': 1
         }
 
-    def __init__(self, model, tabu_iterations=200, tabu_status=20, subset=5, rtoptm=5, roptiter=5, tsp=True, MIP=True):
+    def __init__(self, model, tabu_iterations=200, tabu_status=20, subset=5, rtoptm=10, roptiter=5, tsp=True, MIP=True):
         self.model = model
         self.bus = list(range(self.model.bus))
         self.N = self.model.parameters.rides
@@ -26,8 +26,8 @@ class Tabu():
         self.rtoptm = rtoptm
         self.roptiter = roptiter
         self.tsp = tsp
-        self.best = None
-        self.bestcandidate = None
+        self.best = {}
+        self.bestcandidate = {}
         self.pickup_time = self.model.parameters.pickup_time
         self.early = {i: self.pickup_time[i] - 5 for i in self.pickup_time.keys()}
         self.late = {i: self.pickup_time[i] + 5 for i in self.pickup_time.keys()}
@@ -46,6 +46,7 @@ class Tabu():
         if tsp:
             self.model.initialize()
             self.model.setLowerBound()
+            # [self.model.submodel[s].Fixsecondstage() for s in self.scenarios]
 
     def tabuheuristic(self):
         temp = 0
@@ -53,7 +54,11 @@ class Tabu():
         print('Building Initial Solution')
         self.bestcandidate = self.initialSolution()
         self.solutionEval(self.bestcandidate)
-        self.best = self.bestcandidate
+        for k in self.bestcandidate.keys():
+            if k in self.bus:
+                self.best[k] = self.bestcandidate[k].copy()
+            else:
+                self.best[k] = self.bestcandidate[k]
         self.bestlist.append(self.best[max(self.bus)].head.value)
         print('Starting Heuristic')
         for iter in range(self.tabuiter):
@@ -69,7 +74,12 @@ class Tabu():
             print(self.bestcandidate[-1], self.best[-1])
             if self.bestcandidate[-1] < self.best[-1] or iter % self.rtoptm == 0:
                 if self.bestcandidate[-1] < self.best[-1]:
-                    self.best = self.bestcandidate
+                    for k in self.bestcandidate.keys():
+                        if k in self.bus:
+                            self.best[k] = self.bestcandidate[k].copy()
+                        else:
+                            self.best[k] = self.bestcandidate[k]
+
                 for k in self.bus:
                     for i in self.best[k]:
                         if i in self.pickup:
@@ -81,13 +91,13 @@ class Tabu():
                         self.solutionEval(sol)
                     if sol[-1] < self.best[-1]:
                         self.best = sol
-                    # print(itr)
+                        print(itr)
             self.bestlist.append(self.best[max(self.bus)].head.value)
             if temp != self.best[-2]:
                 criteria = 0
             temp = self.best[-2]
             criteria += 1
-            if criteria == self.tabu_status:
+            if criteria == self.tabu_status*10:
                 self.MIP = True
                 self.best[-1] = 0
                 self.solutionEval(self.best)
@@ -113,8 +123,8 @@ class Tabu():
             if opt == len(self.bus):
                 return sol
         for k in self.bus:
-            sl = sol[k].copy()
-            if not prioritynodes[k].empty():
+            while not prioritynodes[k].empty():
+                sl = sol[k].copy()
                 val, criteria, pnode = prioritynodes[k].get()
                 val = -val
                 node = sl[pnode]
@@ -142,6 +152,7 @@ class Tabu():
                         insrt = True
                 if pnode in sl.list():
                     sol[k] = sl
+                    self.solutionEval(sol)
         return sol
 
     def initialSolution(self):
@@ -172,8 +183,8 @@ class Tabu():
                     except KeyError:
                         self.tabudict.update({(i, k): [self.tabu_status, 1]})
                     for b in availbus:
-                        if b == k:
-                            continue
+                        # if b == k:
+                        #     continue
                         try:
                             if self.tabudict[i, b][0] == 0:
                                 node = ngbr[k][i]
@@ -191,7 +202,7 @@ class Tabu():
                                             node.bus = b
                                         else:
                                             break
-                                ngbr[-1] += self.penalty * self.tabudict[i, b][1]
+                                ngbr[-1] += self.penalty * self.tabudict[i, b][1] + 0.01
                                 break
                         except KeyError:
                             self.tabudict[i, b] = [0, 0]
@@ -210,9 +221,10 @@ class Tabu():
                                         node.bus = b
                                     else:
                                         break
-                            ngbr[-1] += self.penalty*self.tabudict[i, b][1]
+                            ngbr[-1] += self.penalty*self.tabudict[i, b][1] + 0.01
                             break
-                    neighborhood.append(ngbr)
+                    if ngbr[-1] != 0:
+                        neighborhood.append(ngbr)
         return neighborhood
 
     def solutionEval(self, solution):
@@ -317,7 +329,7 @@ class Tabu():
                 if i == 0:
                     # Time duration of entire trip
                     dur = max(0, schedule[k][self.model.last][0] - schedule[k][0][3] - self.routetime)
-                else:
+                elif i in self.pickup:
                     # Time window constraint
                     tmwndw = max(0, schedule[k][i][1] - self.late[i])
                     # Customer ride-time constraint

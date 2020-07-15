@@ -572,6 +572,14 @@ class SubProblem:
         m.update()
         self.relaxmod = self.model.relax()
 
+    def Fixsecondstage(self):
+        m = self.model
+        self.fixedconst_xs = m.addConstrs(
+            (self.variables.xs[i, j, k] == 0 for i, j, k in self.variables.xs.keys()), name='fix_xs'
+        )
+
+        self.relaxmod = self.model.relax()
+
     def fix_values(self, MP=None, sol=None):
         if MP is None:
             m = self.MP
@@ -602,6 +610,12 @@ class SubProblem:
                 except KeyError:
                     self.relaxmod.getConstrByName('fix_x[{},{},{}]'.format(i, j, k)).rhs = 0
                     self.fixedconst_x[i, j, k].rhs = 0
+                try:
+                    self.relaxmod.getConstrByName('xs[{},{},{}]'.format(i, j, k)).rhs = round(sol[3][i, j, k], 4)
+                    self.fixedconst_x[i, j, k].rhs = sol[3]
+                except IndexError:
+                    pass
+
             for i, j in self.fixedconst_h.keys():
                 try:
                     self.relaxmod.getConstrByName('fix_h[{},{}]'.format(i, j)).rhs = \
