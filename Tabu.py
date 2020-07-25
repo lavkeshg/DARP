@@ -1,4 +1,5 @@
 import random as rdm
+import time
 from queue import PriorityQueue
 from LinkedList import *
 import math
@@ -40,7 +41,7 @@ class Tabu():
         self.subset = min(subset, self.model.scenarios)
         self.bestlist = []
         self.MIP = MIP
-        self.penalty = math.sqrt(len(self.bus)*len(self.pickup))
+        self.penalty = math.sqrt(len(self.bus)*len(self.pickup))*10
         self._init_weights()
         self.scenarioprob = {i: 1 / self.subset for i in self.scenarios}
         if tsp:
@@ -67,12 +68,15 @@ class Tabu():
                 self.tabudict[i, k][0] = max(0, decr)
             ngbr = self.neighborhoodGen()
             print('Neighborhood length: %d (iteration %d)' % (len(ngbr), iter+1))
+            t = time.time()
             [self.solutionEval(n) for n in ngbr]
+            print('Neighborhood Eval Time: ',time.time()-t)
             for candidate in ngbr:
                 if candidate[-1] < self.bestcandidate[-1]:
                     self.bestcandidate = candidate
             print(self.bestcandidate[-1], self.best[-1])
             if self.bestcandidate[-1] < self.best[-1] or iter % self.rtoptm == 0:
+                t2 = time.time()
                 if self.bestcandidate[-1] < self.best[-1]:
                     for k in self.bestcandidate.keys():
                         if k in self.bus:
@@ -93,13 +97,14 @@ class Tabu():
                         break
                     if sol[-1] < self.best[-1]:
                         self.best = sol
-                        print(itr)
+                        # print(itr)
+                print('Time in RouteOptm step:', time.time() - t2)
             self.bestlist.append(self.best[max(self.bus)].head.value)
             if temp != self.best[-2]:
                 criteria = 0
             temp = self.best[-2]
             criteria += 1
-            if criteria == self.tabu_status*10:
+            if criteria == self.tabu_status*5:
                 self.MIP = True
                 self.best[-1] = 0
                 self.solutionEval(self.best)
@@ -207,6 +212,7 @@ class Tabu():
                                 ngbr[-1] += self.penalty * self.tabudict[i, b][1] + 0.01
                                 break
                         except KeyError:
+                            # print("Error detected")
                             self.tabudict[i, b] = [0, 0]
                             node = ngbr[k][i]
                             ngbr[k].remove(i)
@@ -226,6 +232,7 @@ class Tabu():
                             ngbr[-1] += self.penalty*self.tabudict[i, b][1] + 0.01
                             break
                     if ngbr[-1] != 0:
+                        # print("Neighbor Generated")
                         neighborhood.append(ngbr)
         return neighborhood
 
