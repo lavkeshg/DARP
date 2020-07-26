@@ -1,6 +1,6 @@
 import random
 import math
-random.seed(200)
+
 class Rides:
 
     def __init__(self, N, start_time='8:00', service_time='6:00'):
@@ -55,7 +55,8 @@ class Rides:
 
 class Map(Rides):
 
-    def __init__(self, N, start_time='8:00', service_time='6:00'):
+    def __init__(self, N, start_time='8:00', service_time='6:00', seed=200):
+        random.seed(seed)
         super().__init__(N, start_time, service_time)
         self.node = self.coordinates()
         self.distance = self.distance()
