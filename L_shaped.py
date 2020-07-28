@@ -61,11 +61,12 @@ class MasterProblem:
         self.model.params.Heuristics = 0.05
         self.infeasol = []
 
-    def optimize(self):
+    def optimize(self, skip_init=False):
         self.model.Params.OutputFlag = 0
         self.model.optimize()
         self.setLowerBound()
-        self._Benders_decomp()
+        if not skip_init:
+            self._Benders_decomp()
         self.setMIP()
         self.solutions = []
         self.solutionsLP = []

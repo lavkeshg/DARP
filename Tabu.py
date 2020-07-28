@@ -2,7 +2,7 @@ import random as rdm
 import time
 from queue import PriorityQueue
 from LinkedList import *
-import math
+import math, sys
 
 
 class Tabu():
@@ -58,9 +58,11 @@ class Tabu():
         self.al = {s: self.model.submodel[s].sim.alpha for s in self.model.submodel.keys()}
         candidates = []
         printProgressBar(0, self.init_pool, prefix='Progress:', suffix='Complete', length=50)
+        sys.stdout.flush()
         for i in range(self.init_pool):
             candidates.append(self.initialSolution())
             printProgressBar(i+1, self.init_pool, prefix='Progress:', suffix='Complete', length=50)
+            sys.stdout.flush()
         for c in candidates:
             if self.bestcandidate=={}:
                 self.bestcandidate = c
@@ -130,6 +132,7 @@ class Tabu():
             if criteria == self.tabu_status*15:
                 self.MIP = True
                 # print(self.best)
+                print(self.best)
                 self.best[-1] = 0
                 self.solutionEval(self.best)
                 self.submodelOptimization(self.best)
