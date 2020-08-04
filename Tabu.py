@@ -41,6 +41,7 @@ class Tabu():
         self.subset = min(subset, self.model.scenarios)
         self.bestlist = []
         self.MIP = MIP
+        self.first = True
         self.penalty = math.sqrt(len(self.bus)*len(self.pickup))*10
         self.init_pool = init_pool
         self._init_weights()
@@ -85,15 +86,11 @@ class Tabu():
             t = time.time()
             [self.solutionEval(n) for n in ngbr]
             [self.submodelOptimization(n) for n in ngbr]
-            for n in ngbr:
-                if (n[1].list() == [0,1,5,3,6,8,4,9,10,11] or n[0].list() == [[0,1,5,3,6,8,4,9,10,11]]) \
-                and (n[1].list() == [0,2,7,11] or n[0].list() == [0,2,7,11]):
-                    print(n, "SOLUTION FOUND")
-                    exit()
             # print('Neighborhood Eval Time: ',time.time()-t)
             rdm.shuffle(ngbr)
             try: ngbr_seed = ngbr[0]
             except IndexError: ngbr_seed = self.initialSolution()
+            assert ngbr_seed != {}
             for candidate in ngbr:
                 if candidate[-1] < ngbr_seed[-1]:
                     ngbr_seed = candidate
@@ -197,8 +194,14 @@ class Tabu():
         self.tabudict = {}
         for i in self.bus:
             solution[i].append(Node(0, bus=i))
-        rdm.shuffle(self.pickup)
-        for i in self.pickup:
+        _ = self.pickup
+        if self.first:
+            temp = sorted(self.pickup_time.items(), key=lambda x: x[1])
+            _ = [i[0] for i in temp if i[0] in self.pickup]
+            self.first = False
+        else:
+            rdm.shuffle(self.pickup)
+        for i in _:
             j = rdm.randint(0, len(self.bus) - 1)
             solution[j].append(Node(i))
             solution[j].append(Node(i + self.N))

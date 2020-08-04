@@ -71,12 +71,14 @@ class MasterProblem:
 
         self.variables.x = m.addVars(self.parameters.edges, list(range(self.bus)),
                                      vtype=GRB.BINARY,
-                                     obj={(i, j, k): self.parameters.distance[i, j] for i, j in
-                                          self.parameters.distance.keys()
-                                          for k in range(self.bus)}, name='x')
+                                     obj=0
+                                         # {(i, j, k): self.parameters.distance[i, j] for i, j in
+                                         #  self.parameters.distance.keys()
+                                         #  for k in range(self.bus)\
+                                     , name='x')
         # self.variables.p_e = m.addVars(self.parameters.pickup + self.parameters.dropoff,
         #                                vtype=GRB.CONTINUOUS, lb=0, obj=1, name='p_e')
-        self.variables.p_l = m.addVars(self.parameters.pickup, vtype=GRB.CONTINUOUS, lb=0, obj=1, name='p_l')
+        self.variables.p_l = m.addVars(self.parameters.pickup, vtype=GRB.CONTINUOUS, lb=0, obj=0, name='p_l')
         self.variables.t = m.addVars(self.parameters.pickup + self.parameters.dropoff,
                                      vtype=GRB.CONTINUOUS, lb={i: j - 5 for i, j in self.parameters.pickup_time.items()},
                                      obj=0, name='t')
@@ -84,7 +86,7 @@ class MasterProblem:
                                       vtype=GRB.CONTINUOUS, lb=0, obj=0, name='t')
         self.variables.w = m.addVars(self.parameters.nodes, lb=0, ub=self.parameters.capacity, vtype=GRB.CONTINUOUS,
                                      name='w')
-        self.variables.h = m.addVars(self.parameters.edges, vtype=GRB.CONTINUOUS, obj=1, name='h')
+        self.variables.h = m.addVars(self.parameters.edges, vtype=GRB.CONTINUOUS, obj=0, name='h')
         # m.setObjective(quicksum(self.variables.x[i,j,k]*self.parameters.distance[i, j]
         #                         + self.variables.h[i,j]*self.variables.w[i]
         #                         for i,j in self.parameters.edges for k in range(self.bus))+
@@ -322,24 +324,26 @@ class TwoStage:
             early_arr = {(i, s): j - 5 for i, j in self.parameters.pickup_time.items()}
 
         self.variables.xs = m.addVars(self.parameters.edges, b, S,
-                                      vtype=GRB.BINARY, obj={(i, j, k, s): self.parameters.distance[i, j]/xi for i, j in
-                                                             self.parameters.distance.keys()
-                                                             for k in b for s in S}, name='x')
+                                      vtype=GRB.BINARY, obj=0
+                                      # {(i, j, k, s): self.parameters.distance[i, j]/xi for i, j in
+                                      #                        self.parameters.distance.keys()
+                                                             # for k in b for s in S}
+                                      , name='x')
         # self.variables.p_es = m.addVars(p + d, S, vtype=GRB.CONTINUOUS, lb=0, obj=1/xi, name='p_e')
-        self.variables.p_ls = m.addVars(p, S, vtype=GRB.CONTINUOUS, lb=0, obj=1/xi, name='p_l')
+        self.variables.p_ls = m.addVars(p, S, vtype=GRB.CONTINUOUS, lb=0, obj=0, name='p_l')
         self.variables.ts = m.addVars(p + d, S, vtype=GRB.CONTINUOUS, lb=early_arr, obj=0, name='t')
         self.variables.tds = m.addVars(self.MP.mapObject.depot(), b, S,
-                                       vtype=GRB.CONTINUOUS, lb=0, obj=0.0001, name='t')
+                                       vtype=GRB.CONTINUOUS, lb=0, obj=0, name='t')
         # self.variables.ws = m.addVars(self.parameters.nodes, S, lb=0, ub=self.parameters.capacity,
         #                               vtype=GRB.CONTINUOUS, name='w')
-        self.variables.hs = m.addVars(self.parameters.edges, S, vtype=GRB.CONTINUOUS, obj=1/xi, name='h')
+        self.variables.hs = m.addVars(self.parameters.edges, S, vtype=GRB.CONTINUOUS, obj=0, name='h')
         m.update()
 
     def _setobjective(self):
         m = self.model
         m.setObjective(
             # Master-problem
-            quicksum(self.MP.variables.x[i, j, k] * self.parameters.distance[i, j]
+            1.01*quicksum(self.MP.variables.x[i, j, k] * self.parameters.distance[i, j]
                      + self.MP.variables.h[i, j]
                      # * self.MP.variables.w[i]
                      for i, j in self.parameters.edges for k in range(self.MP.bus)) +
@@ -352,6 +356,12 @@ class TwoStage:
                                              for k in range(self.MP.bus) for s in self.parameters.xi) +
                                     quicksum((self.variables.p_ls[i, s] - self.MP.variables.p_l[i])
                                              for i in self.parameters.pickup for s in self.parameters.xi))
+            # (1 / self.scenarios) * (quicksum(self.parameters.distance[i, j] * (self.variables.xs[i, j, k, s])
+            #                                  + (self.variables.hs[i, j, s])
+            #                                  for i, j in self.parameters.edges
+            #                                  for k in range(self.MP.bus) for s in self.parameters.xi) +
+            #                         quicksum((self.variables.p_ls[i, s])
+            #                                  for i in self.parameters.pickup for s in self.parameters.xi))
         )
 
     def _constraints(self):
