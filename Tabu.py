@@ -29,6 +29,7 @@ class Tabu():
         self.tsp = tsp
         self.best = {}
         self.bestcandidate = {}
+        self.MIP = MIP
         self.pickup_time = self.model.parameters.pickup_time
         self.early = {i: self.pickup_time[i] - 5 for i in self.pickup_time.keys()}
         self.late = {i: self.pickup_time[i] + 5 for i in self.pickup_time.keys()}
@@ -40,7 +41,6 @@ class Tabu():
         self.scenarios = list(range(self.model.scenarios))
         self.subset = min(subset, self.model.scenarios)
         self.bestlist = []
-        self.MIP = MIP
         self.first = True
         self.penalty = math.sqrt(len(self.bus)*len(self.pickup))*10
         self.init_pool = init_pool
@@ -50,7 +50,7 @@ class Tabu():
             self.model.initialize()
             self.model.setLowerBound()
             self.al = {}
-            # [self.model.submodel[s].Fixsecondstage() for s in self.scenarios]
+            [self.model.submodel[s].Fixsecondstage() for s in self.scenarios]
 
     def tabuheuristic(self):
         temp = 0
@@ -65,7 +65,7 @@ class Tabu():
             printProgressBar(i+1, self.init_pool, prefix='Progress:', suffix='Complete', length=50)
             sys.stdout.flush()
         for c in candidates:
-            if self.bestcandidate=={}:
+            if self.bestcandidate == {}:
                 self.bestcandidate = c
             if c[-1] < self.bestcandidate[-1]:
                 self.bestcandidate = c
@@ -127,14 +127,12 @@ class Tabu():
             temp = self.best[-2]
             criteria += 1
             if criteria == self.tabu_status*15:
-                self.MIP = True
                 # print(self.best)
                 print(self.best)
                 self.best[-1] = 0
                 self.solutionEval(self.best)
                 self.submodelOptimization(self.best)
                 return self.best
-        self.MIP = True
         self.best[-1] = 0
         self.solutionEval(self.best)
         self.submodelOptimization(self.best)
@@ -413,7 +411,7 @@ class Tabu():
                     node.time = schedule[k][0][3]
                     node.load = 0
         solution[-2] = cost
-
+        solution[-4] = xsol
         #############################################################
 
         # rdm.shuffle(self.scenarios)
@@ -466,15 +464,41 @@ class Tabu():
         cost = solution[-2]
         tsp = 0
         for s in S:
+            xsol = solution[-4]
+            xsol.append({})
+            temp  = xsol
             sim = {k: solution[k].copy() for k in self.bus}
             for k in self.bus:
+                prev = 0
+                remove = PriorityQueue()
                 for i in sim[k]:
                     if self.al[s][i] == 0:
-                        sim[k].remove(i)
-            self.solutionEval(sim)
+                        remove.put(i)
+                        continue
+                    if i != 0:
+                        xsol[3].update({(prev, i, k): 1})
+                        prev = i
+                while not remove.empty():
+                    sim[k].remove(remove.get())
+            if self.MIP:
+                rdm.shuffle(self.scenarios)
+                self.model.submodel[s].fix_values(self, sol=xsol)
+                # Optimize MIP 2nd Stage
+                self.model.submodel[s].optimize()
+                if self.model.submodel[s].model.status == 2:
+                    sim[-2] = self.model.submodel[s].model.ObjVal
+                else:
+                    self.model.submodel[s].model.computeIIS()
+                    self.model.submodel[s].model.write('./Reports/infeasibleSubProb.ilp')
+                    exit()
+            else:
+                self.solutionEval(sim)
             tsp += self.scenarioprob[s]*(sim[-2] - cost)
+            xsol.pop()
         solution[-3] = tsp
         solution[-1] = cost + tsp
+        solution.pop(-4)
+
 
 
 def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█', printEnd = "\r"):

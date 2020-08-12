@@ -578,14 +578,14 @@ class SubProblem:
         self.fixedconst_xs = m.addConstrs(
             (self.variables.xs[i, j, k] == 0 for i, j, k in self.variables.xs.keys()), name='fix_xs'
         )
+        m.update()
 
-        self.relaxmod = self.model.relax()
-
-    def fix_values(self, MP=None, sol=None):
+    def fix_values(self, MP=None, sol=None, sub_sol=None):
         if MP is None:
             m = self.MP
         else:
             m = MP
+
         if sol is None:
             for i, j, k in self.fixedconst_x.keys():
                 x = round(m.variables.x[i, j, k].X, 4)
@@ -612,11 +612,11 @@ class SubProblem:
                     self.relaxmod.getConstrByName('fix_x[{},{},{}]'.format(i, j, k)).rhs = 0
                     self.fixedconst_x[i, j, k].rhs = 0
                 try:
-                    self.relaxmod.getConstrByName('xs[{},{},{}]'.format(i, j, k)).rhs = round(sol[3][i, j, k], 4)
-                    self.fixedconst_x[i, j, k].rhs = sol[3]
+                    self.fixedconst_xs[i, j, k].rhs = sol[3][i, j, k]
+                except KeyError:
+                    self.fixedconst_xs[i, j, k].rhs = 0
                 except IndexError:
                     pass
-
             for i, j in self.fixedconst_h.keys():
                 try:
                     self.relaxmod.getConstrByName('fix_h[{},{}]'.format(i, j)).rhs = \
@@ -631,5 +631,6 @@ class SubProblem:
                     round(sol[2][i], 4)
                 self.fixedconst_p_l[i].rhs = \
                     round(sol[2][i])
+
         self.model.update()
         self.relaxmod.update()
