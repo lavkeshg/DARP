@@ -55,6 +55,7 @@ class Tabu():
     def tabuheuristic(self):
         temp = 0
         criteria = 0
+        objval = -1
         print('Building Initial Solution')
         self.al = {s: self.model.submodel[s].sim.alpha for s in self.model.submodel.keys()}
         candidates = []
@@ -67,7 +68,7 @@ class Tabu():
         for c in candidates:
             if self.bestcandidate == {}:
                 self.bestcandidate = c
-            if c[-1] < self.bestcandidate[-1]:
+            if c[objval] < self.bestcandidate[objval]:
                 self.bestcandidate = c
         for k in self.bestcandidate.keys():
             if k in self.bus:
@@ -92,14 +93,14 @@ class Tabu():
             except IndexError: ngbr_seed = self.initialSolution()
             assert ngbr_seed != {}
             for candidate in ngbr:
-                if candidate[-1] < ngbr_seed[-1]:
+                if candidate[objval] < ngbr_seed[objval]:
                     ngbr_seed = candidate
-                if candidate[-1] < self.bestcandidate[-1]:
+                if candidate[objval] < self.bestcandidate[objval]:
                     self.bestcandidate = candidate
-            print(self.bestcandidate[-1], self.best[-1])
-            if self.bestcandidate[-1] < self.best[-1] or iter % self.rtoptm == 0:
+            print(self.bestcandidate[objval], self.best[objval])
+            if self.bestcandidate[objval] < self.best[objval] or iter % self.rtoptm == 0:
                 t2 = time.time()
-                if self.bestcandidate[-1] < self.best[-1]:
+                if self.bestcandidate[objval] < self.best[objval]:
                     for k in self.bestcandidate.keys():
                         if k in self.bus:
                             self.best[k] = self.bestcandidate[k].copy()
@@ -117,21 +118,20 @@ class Tabu():
                     #     self.solutionEval(sol)
                     if sol is None:
                         break
-                    if sol[-1] < self.best[-1]:
+                    if sol[objval] < self.best[objval]:
                         self.best = sol
                         # print(itr)
                 # print('Time in RouteOptm step:', time.time() - t2)
             self.bestlist.append(self.best[max(self.bus)].head.value)
-            if temp != self.best[-2]:
+            if temp != self.best[objval]:
                 criteria = 0
-            temp = self.best[-2]
+            temp = self.best[objval]
             criteria += 1
-            if criteria == self.tabu_status*15:
+            if criteria == min(100, self.tabu_status*15):
                 # print(self.best)
-                print(self.best)
                 self.best[-1] = 0
                 self.solutionEval(self.best)
-                self.submodelOptimization(self.best)
+                self.submodelOptimization(self.best, capture=True)
                 return self.best
         self.best[-1] = 0
         self.solutionEval(self.best)
@@ -458,7 +458,7 @@ class Tabu():
         # solution[-1] += cost
         # return solution
 
-    def submodelOptimization(self, solution):
+    def submodelOptimization(self, solution, capture=False):
         rdm.shuffle(self.scenarios)
         S = self.scenarios[:self.subset]
         cost = solution[-2]
@@ -466,7 +466,7 @@ class Tabu():
         for s in S:
             xsol = solution[-4]
             xsol.append({})
-            temp  = xsol
+            temp = xsol
             sim = {k: solution[k].copy() for k in self.bus}
             for k in self.bus:
                 prev = 0
@@ -480,21 +480,21 @@ class Tabu():
                         prev = i
                 while not remove.empty():
                     sim[k].remove(remove.get())
-            if self.MIP:
-                rdm.shuffle(self.scenarios)
-                self.model.submodel[s].fix_values(self, sol=xsol)
-                # Optimize MIP 2nd Stage
-                self.model.submodel[s].optimize()
-                if self.model.submodel[s].model.status == 2:
-                    sim[-2] = self.model.submodel[s].model.ObjVal
-                else:
-                    self.model.submodel[s].model.computeIIS()
-                    self.model.submodel[s].model.write('./Reports/infeasibleSubProb.ilp')
-                    exit()
+            # if self.MIP:
+            self.model.submodel[s].fix_values(self, sol=xsol)
+            # Optimize MIP 2nd Stage
+            self.model.submodel[s].optimize()
+            if self.model.submodel[s].model.status == 2:
+                tsp += self.scenarioprob[s]*self.model.submodel[s].model.ObjVal
+                if capture:
+                    self.model.submodel[s].model.write('./Reports/Submodels/Submodel_{}.sol'.format(s))
             else:
+                self.model.submodel[s].model.computeIIS()
+                self.model.submodel[s].model.write('./Reports/infeasibleSubProb.ilp')
                 self.solutionEval(sim)
-            tsp += self.scenarioprob[s]*(sim[-2] - cost)
+                tsp += self.scenarioprob[s]*(sim[-2] - cost)
             xsol.pop()
+        # print(tsp)
         solution[-3] = tsp
         solution[-1] = cost + tsp
         solution.pop(-4)
