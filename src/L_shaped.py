@@ -1,4 +1,4 @@
-import random
+import random, os
 from gurobipy import *
 from beautifultable import BeautifulTable
 from _datetime import timedelta

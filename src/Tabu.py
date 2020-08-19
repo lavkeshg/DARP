@@ -1,7 +1,8 @@
 import random as rdm
 import time
 from queue import PriorityQueue
-from LinkedList import *
+from src.LinkedList import *
+from src.L_shaped import MasterProblem as mp
 import math, sys
 
 
@@ -16,8 +17,15 @@ class Tabu():
             'delta': 1
         }
 
-    def __init__(self, model, tabu_iterations=200, tabu_status=20, subset=5, rtoptm=10, roptiter=5, tsp=True, MIP=True, init_pool=25):
-        self.model = model
+    def __init__(self, mappy, bus, scenarios, probability, tabu_iterations=200, tabu_status=20, subset=5, rtoptm=10,
+                 roptiter=5, tsp=True, MIP=True, init_pool=25):
+
+        def model(mappy, bus, scenarios, probability):
+            lshaped = mp(mappy, bus=bus, scenarios=scenarios, probability=probability)
+            lshaped.initialize()
+            return lshaped
+
+        self.model = model(mappy, bus, scenarios, probability)
         self.bus = list(range(self.model.bus))
         self.N = self.model.parameters.rides
         self.pickup = self.model.parameters.pickup
@@ -83,7 +91,7 @@ class Tabu():
                 decr = self.tabudict[i, k][0] - 1
                 self.tabudict[i, k][0] = max(0, decr)
             ngbr = self.neighborhoodGen(ngbr_seed)
-            print('Neighborhood length: %d (iteration %d)' % (len(ngbr), iter+1))
+            # print('Neighborhood length: %d (iteration %d)' % (len(ngbr), iter+1))
             t = time.time()
             [self.solutionEval(n) for n in ngbr]
             [self.submodelOptimization(n) for n in ngbr]
@@ -97,7 +105,7 @@ class Tabu():
                     ngbr_seed = candidate
                 if candidate[objval] < self.bestcandidate[objval]:
                     self.bestcandidate = candidate
-            print(self.bestcandidate[objval], self.best[objval])
+            # print(self.bestcandidate[objval], self.best[objval])
             if self.bestcandidate[objval] < self.best[objval] or iter % self.rtoptm == 0:
                 t2 = time.time()
                 if self.bestcandidate[objval] < self.best[objval]:
@@ -127,11 +135,11 @@ class Tabu():
                 criteria = 0
             temp = self.best[objval]
             criteria += 1
-            if criteria == min(100, self.tabu_status*15):
+            if criteria == min(100, self.tabu_status*8):
                 # print(self.best)
                 self.best[-1] = 0
                 self.solutionEval(self.best)
-                self.submodelOptimization(self.best, capture=True)
+                self.submodelOptimization(self.best)
                 return self.best
         self.best[-1] = 0
         self.solutionEval(self.best)
@@ -486,11 +494,11 @@ class Tabu():
             self.model.submodel[s].optimize()
             if self.model.submodel[s].model.status == 2:
                 tsp += self.scenarioprob[s]*self.model.submodel[s].model.ObjVal
-                if capture:
-                    self.model.submodel[s].model.write('./Reports/Submodels/Submodel_{}.sol'.format(s))
+                # if capture:
+                    # self.model.submodel[s].model.write('./Reports/Submodels/Submodel_{}.sol'.format(s))
             else:
-                self.model.submodel[s].model.computeIIS()
-                self.model.submodel[s].model.write('./Reports/infeasibleSubProb.ilp')
+                # self.model.submodel[s].model.computeIIS()
+                # self.model.submodel[s].model.write('./Reports/infeasibleSubProb.ilp')
                 self.solutionEval(sim)
                 tsp += self.scenarioprob[s]*(sim[-2] - cost)
             xsol.pop()
