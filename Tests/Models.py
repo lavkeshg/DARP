@@ -82,6 +82,7 @@ def lShaped(mappy, bus, scenarios):
 @job
 def tabu(mappy, bus, scenarios):
     t4 = time.time()
+    tabu.TimeLimit = TimeLimit
     mod = Tabu(mappy, bus, scenarios, probability, tabu_iterations=800, tabu_status=mappy.N_riders + 2,
                rtoptm=5, subset=20, tsp=True)
     mod.tabuheuristic()

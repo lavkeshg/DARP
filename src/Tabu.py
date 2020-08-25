@@ -52,6 +52,7 @@ class Tabu():
         self.first = True
         self.penalty = math.sqrt(len(self.bus)*len(self.pickup))*10
         self.init_pool = init_pool
+        self.TimeLimit = None
         self._init_weights()
         self.scenarioprob = {i: 1 / self.subset for i in self.scenarios}
         if tsp:
@@ -63,6 +64,7 @@ class Tabu():
     def tabuheuristic(self):
         temp = 0
         criteria = 0
+        t = time.time()
         objval = -1
         print('Building Initial Solution')
         self.al = {s: self.model.submodel[s].sim.alpha for s in self.model.submodel.keys()}
@@ -106,6 +108,9 @@ class Tabu():
                 if candidate[objval] < self.bestcandidate[objval]:
                     self.bestcandidate = candidate
             # print(self.bestcandidate[objval], self.best[objval])
+            if self.TimeLimit:
+                if self.TimeLimit <= time.time() - t:
+                    return self.best
             if self.bestcandidate[objval] < self.best[objval] or iter % self.rtoptm == 0:
                 t2 = time.time()
                 if self.bestcandidate[objval] < self.best[objval]:

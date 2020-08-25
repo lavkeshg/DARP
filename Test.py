@@ -2,7 +2,7 @@ from src.Map import Map
 from src.Tabu import Tabu
 from src.L_shaped import MasterProblem as mp
 
-rides = 5
+rides = 3
 bus = 2
 scenarios = 10
 MIPGap = 0.001
